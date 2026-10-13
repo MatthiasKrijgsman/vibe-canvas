@@ -13,6 +13,11 @@ files:
   - '!node_modules/node-pty/{src,deps,third_party,scripts,typings,binding.gyp}'
   - '!node_modules/node-pty/prebuilds/win32-*'
 
+# $BROWSER for Claude Code sessions; it has to be an executable file outside the asar.
+extraResources:
+  - from: resources/browser-shim.js
+    to: browser-shim.js
+
 # node-pty's native module and spawn-helper must live outside the asar archive to be
 # loaded and executed; node-pty looks for them in app.asar.unpacked.
 asarUnpack:

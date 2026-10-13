@@ -2,7 +2,7 @@ import { contextBridge, ipcRenderer, type IpcRendererEvent } from 'electron'
 import { readFileSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { join } from 'node:path'
-import type { CanvasApi, HookEvent } from '../shared/types'
+import type { CanvasApi, HookEvent, PreviewOpenRequest, ServerStatus } from '../shared/types'
 
 function subscribe<A extends unknown[]>(channel: string, cb: (...args: A) => void): () => void {
   const listener = (_e: IpcRendererEvent, ...args: unknown[]) => cb(...(args as A))
@@ -44,6 +44,19 @@ const api: CanvasApi = {
     onData: (cb) => subscribe<[string, string]>('pty:data', cb),
     onExit: (cb) => subscribe<[string, number]>('pty:exit', cb),
     onHook: (cb) => subscribe<[HookEvent]>('pty:hook', cb)
+  },
+  preview: {
+    attach: (id, webContentsId, data) => ipcRenderer.send('preview:attach', id, webContentsId, data),
+    detach: (id, webContentsId) => ipcRenderer.send('preview:detach', id, webContentsId),
+    close: (id) => ipcRenderer.send('preview:close', id),
+    startServer: (id) => ipcRenderer.invoke('preview:startServer', id),
+    stopServer: (id) => ipcRenderer.send('preview:stopServer', id),
+    onOpen: (cb) => subscribe<[PreviewOpenRequest]>('preview:open', cb),
+    onResize: (cb) => subscribe<[string, number, number]>('preview:resize', cb),
+    onActivity: (cb) => subscribe<[string, boolean]>('preview:activity', cb),
+    onServer: (cb) => subscribe<[string, ServerStatus | null]>('preview:server', cb),
+    onFocus: (cb) => subscribe<[string]>('preview:focus', cb),
+    onRestoreFocus: (cb) => subscribe<[]>('preview:restoreFocus', cb)
   }
 }
 

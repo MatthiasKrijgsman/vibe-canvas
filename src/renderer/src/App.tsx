@@ -12,6 +12,7 @@ import {
   type OnBeforeDelete,
   type OnNodeDrag,
   type OnNodesChange,
+  type OnNodesDelete,
   type XYPosition
 } from '@xyflow/react'
 import '@xyflow/react/dist/base.css'
@@ -24,11 +25,13 @@ import {
   type DragEvent as ReactDragEvent,
   type MouseEvent as ReactMouseEvent
 } from 'react'
-import type { CanvasState, Effort, Project, SavedNode, TerminalData } from '../../shared/types'
+import type { CanvasState, Effort, PreviewOpenRequest, Project, SavedNode, TerminalData } from '../../shared/types'
 import { CanvasContext, pendingFocus, type DropTarget, type PromptRun } from './canvasContext'
-import { FitIcon, MinusIcon, NoteIcon, PlusIcon, SparkIcon } from './icons'
+import { FitIcon, GlobeIcon, MinusIcon, NoteIcon, PlusIcon, SparkIcon } from './icons'
 import { GRID, snap, snapPoint } from './grid'
 import { hasImageFiles, importImages } from './images'
+import LinkEdge from './LinkEdge'
+import PreviewNode, { type PreviewNodeType } from './nodes/PreviewNode'
 import PromptNode, { type PromptNodeType } from './nodes/PromptNode'
 import PromptDragOverlay from './PromptDragOverlay'
 import TerminalNode, { type TerminalNodeType } from './nodes/TerminalNode'
@@ -37,10 +40,10 @@ import Sidebar from './Sidebar'
 import StartDialog from './StartDialog'
 import { getTerminalStatus, onAnyTerminalHook, onTerminalStatusChange, sendPrompt } from './terminals'
 
-export type AppNode = PromptNodeType | TerminalNodeType
+export type AppNode = PromptNodeType | TerminalNodeType | PreviewNodeType
 
-const nodeTypes = { prompt: PromptNode, terminal: TerminalNode }
-const edgeTypes = { run: RunEdge }
+const nodeTypes = { prompt: PromptNode, terminal: TerminalNode, preview: PreviewNode }
+const edgeTypes = { run: RunEdge, link: LinkEdge }
 
 const DOT_SIZE = 1.4
 /** Screen pixels per second when moving the camera with WASD. */
@@ -55,6 +58,7 @@ const clampZoom = (zoom: number) => Math.min(MAX_ZOOM, Math.max(MIN_ZOOM, zoom))
 
 const PROMPT_WIDTH = 14 * GRID
 const TERMINAL_SIZE = { width: 32 * GRID, height: 20 * GRID }
+const PREVIEW_SIZE = { width: 40 * GRID, height: 28 * GRID }
 
 function restoreNode(saved: SavedNode): AppNode {
   if (saved.type === 'terminal') {
@@ -66,6 +70,17 @@ function restoreNode(saved: SavedNode): AppNode {
       height: snap(saved.height ?? TERMINAL_SIZE.height),
       dragHandle: '.terminal-drag',
       data: saved.data as TerminalNodeType['data']
+    }
+  }
+  if (saved.type === 'preview') {
+    return {
+      id: saved.id,
+      type: 'preview',
+      position: snapPoint(saved.position),
+      width: saved.width ?? PREVIEW_SIZE.width,
+      height: saved.height ?? PREVIEW_SIZE.height,
+      dragHandle: '.preview-drag',
+      data: saved.data as PreviewNodeType['data']
     }
   }
   return {
@@ -80,10 +95,10 @@ function restoreNode(saved: SavedNode): AppNode {
 
 function saveNode(node: AppNode): SavedNode {
   const width = node.width ?? node.measured?.width
-  if (node.type === 'terminal') {
+  if (node.type === 'terminal' || node.type === 'preview') {
     return {
       id: node.id,
-      type: 'terminal',
+      type: node.type,
       position: node.position,
       width,
       height: node.height ?? node.measured?.height,
@@ -116,7 +131,8 @@ function findFreeSpot(nodes: AppNode[], start: XYPosition, size: { width: number
         pos.y + size.height + gap > r.y
     )
     if (!hit) break
-    pos.y = snap(hit.y + hit.height + gap)
+    // Round up: cards resized to an exact viewport can end between grid lines.
+    pos.y = Math.ceil((hit.y + hit.height + gap) / GRID) * GRID
   }
   return pos
 }
@@ -396,6 +412,42 @@ function Workspace({ initial }: { initial: CanvasState | null }) {
     [setNodes, viewportCenter, reveal]
   )
 
+  const createPreview = useCallback(
+    (request: Omit<PreviewOpenRequest, 'id'> & { id?: string }) => {
+      const id = request.id ?? `preview-${crypto.randomUUID()}`
+      setNodes((ns) => {
+        // Next to the session that opened it; otherwise in the middle of the view.
+        const terminal = request.terminalId ? ns.find((n) => n.id === request.terminalId) : undefined
+        const start = terminal
+          ? { x: terminal.position.x + nodeRect(terminal).width + 2 * GRID, y: terminal.position.y }
+          : (() => {
+              const c = viewportCenter()
+              return { x: c.x - PREVIEW_SIZE.width / 2, y: c.y - PREVIEW_SIZE.height / 2 }
+            })()
+        const node: PreviewNodeType = {
+          id,
+          type: 'preview',
+          position: findFreeSpot(ns, start, PREVIEW_SIZE),
+          ...PREVIEW_SIZE,
+          dragHandle: '.preview-drag',
+          data: { url: request.url, terminalId: request.terminalId, server: request.server }
+        }
+        return [...ns, node]
+      })
+      return id
+    },
+    [setNodes, viewportCenter]
+  )
+
+  // Claude (or a dev server it started) opened a preview from a session.
+  useEffect(() => window.canvas.preview.onOpen((request) => createPreview(request)), [createPreview])
+
+  const newPreviewAtCenter = useCallback(() => {
+    const id = `preview-${crypto.randomUUID()}`
+    pendingFocus.add(id)
+    createPreview({ id, url: '' })
+  }, [createPreview])
+
   const closeTerminal = useCallback(
     (id: string) => {
       if (!window.confirm('Close this Claude Code session? The conversation stays on disk and can be resumed with claude --resume.')) return
@@ -483,8 +535,8 @@ function Workspace({ initial }: { initial: CanvasState | null }) {
   }, [nodes, runs])
 
   const edges = useMemo<Edge[]>(
-    () =>
-      Object.entries(runs).flatMap(([promptId, run]) => {
+    () => [
+      ...Object.entries(runs).flatMap(([promptId, run]) => {
         const prompt = nodes.find((n) => n.id === promptId)
         const terminal = nodes.find((n) => n.id === run.terminalId)
         if (!prompt || !terminal) return []
@@ -505,6 +557,29 @@ function Workspace({ initial }: { initial: CanvasState | null }) {
           }
         ]
       }),
+      // Each preview is linked to the session that opened it.
+      ...nodes.flatMap((preview): Edge[] => {
+        if (preview.type !== 'preview' || !preview.data.terminalId) return []
+        const terminal = nodes.find((n) => n.id === preview.data.terminalId)
+        if (!terminal) return []
+        const p = nodeRect(preview)
+        const t = nodeRect(terminal)
+        const rightward = t.x + t.width / 2 <= p.x + p.width / 2
+        return [
+          {
+            id: `link-${preview.id}`,
+            source: preview.id,
+            target: terminal.id,
+            sourceHandle: rightward ? 'left' : 'right',
+            targetHandle: rightward ? 'right' : 'left',
+            type: 'link',
+            selectable: false,
+            focusable: false,
+            deletable: false
+          }
+        ]
+      })
+    ],
     [runs, nodes]
   )
 
@@ -704,9 +779,14 @@ function Workspace({ initial }: { initial: CanvasState | null }) {
 
   // Terminals close through their own button (with confirmation), not the delete key.
   const onBeforeDelete: OnBeforeDelete<AppNode> = useCallback(
-    async ({ nodes: toDelete }) => ({ nodes: toDelete.filter((n) => n.type === 'prompt'), edges: [] }),
+    async ({ nodes: toDelete }) => ({ nodes: toDelete.filter((n) => n.type !== 'terminal'), edges: [] }),
     []
   )
+
+  // A removed preview takes its dev server with it.
+  const onNodesDelete: OnNodesDelete<AppNode> = useCallback((deleted) => {
+    deleted.forEach((n) => n.type === 'preview' && window.canvas.preview.close(n.id))
+  }, [])
 
   const onDoubleClick = useCallback(
     (e: ReactMouseEvent) => {
@@ -788,6 +868,7 @@ function Workspace({ initial }: { initial: CanvasState | null }) {
             onNodeDragStart={onNodeDragStart}
             onNodeDragStop={onNodeDragStop}
             onBeforeDelete={onBeforeDelete}
+            onNodesDelete={onNodesDelete}
             onDoubleClick={onDoubleClick}
             onDragOver={onCanvasDragOver}
             onDrop={onCanvasDrop}
@@ -830,6 +911,10 @@ function Workspace({ initial }: { initial: CanvasState | null }) {
                 <button className="toolbar-button" onClick={newPromptAtCenter} title="New prompt (⌘N)">
                   <NoteIcon size={15} />
                   New prompt
+                </button>
+                <button className="toolbar-button" onClick={newPreviewAtCenter} title="New browser preview">
+                  <GlobeIcon size={15} />
+                  Preview
                 </button>
                 <span className="toolbar-divider" />
                 <button className="toolbar-button" onClick={() => rf.zoomOut({ duration: 150 })} title="Zoom out">

@@ -4,8 +4,12 @@ import { cpSync, existsSync, mkdirSync, readdirSync, readFileSync, renameSync, w
 import { homedir } from 'node:os'
 import { basename, dirname, join } from 'node:path'
 import { pathToFileURL } from 'node:url'
-import type { CanvasState, PtyStartOptions } from '../shared/types'
+import type { CanvasState, PreviewData, PtyStartOptions } from '../shared/types'
+import { normalizeUrl } from '../shared/url'
+import { handleMcp } from './mcp'
+import { PREVIEW_PARTITION, PreviewManager } from './preview'
 import { PtyManager } from './pty'
+import { LocalServer } from './server'
 
 app.setName('VibeCanvas')
 
@@ -74,9 +78,33 @@ protocol.registerSchemesAsPrivileged([
   { scheme: 'canvas-image', privileges: { standard: true, secure: true, supportFetchAPI: true } }
 ])
 
+// $BROWSER for sessions; outside the asar archive, so it can be executed.
+const browserShim = app.isPackaged
+  ? join(process.resourcesPath, 'browser-shim.js')
+  : join(app.getAppPath(), 'resources/browser-shim.js')
+
 let win: BrowserWindow | null = null
-const ptys = new PtyManager((channel, ...args) => {
-  if (win && !win.isDestroyed()) win.webContents.send(channel, ...args)
+const send = (channel: string, ...args: unknown[]): boolean => {
+  if (!win || win.isDestroyed()) return false
+  win.webContents.send(channel, ...args)
+  return true
+}
+const server = new LocalServer()
+const ptys = new PtyManager(send, server, browserShim)
+const previews = new PreviewManager(send, (terminalId) => ptys.cwd(terminalId))
+
+server.route('POST', /^\/mcp\/([\w-]+)$/, ({ match, body }, res) => handleMcp(previews, match[1], body, res))
+// No server-initiated messages, so no event stream to open.
+server.route('GET', /^\/mcp\/([\w-]+)$/, (_req, res) => {
+  res.writeHead(405, { Allow: 'POST' }).end()
+})
+server.route('DELETE', /^\/mcp\/([\w-]+)$/, (_req, res) => {
+  res.writeHead(204).end()
+})
+server.route('POST', /^\/open\/([\w-]+)$/, ({ match, body }, res) => {
+  const url = body.trim()
+  const ok = /^https?:\/\//.test(url) && previews.openFromBrowser(match[1], normalizeUrl(url))
+  res.writeHead(ok ? 204 : 503).end()
 })
 
 function createWindow(): void {
@@ -95,7 +123,8 @@ function createWindow(): void {
     webPreferences: {
       preload: join(__dirname, '../preload/index.js'),
       sandbox: false,
-      contextIsolation: true
+      contextIsolation: true,
+      webviewTag: true
     }
   })
 
@@ -109,6 +138,26 @@ function createWindow(): void {
   })
   win.webContents.on('will-navigate', (e, url) => {
     if (!url.startsWith(process.env.ELECTRON_RENDERER_URL ?? 'file://')) e.preventDefault()
+  })
+
+  // Preview cards: sandboxed pages without node or preloads, in their own persistent
+  // session, kept rendering while off-screen so Claude can still screenshot them.
+  win.webContents.on('will-attach-webview', (_e, prefs, params) => {
+    delete prefs.preload
+    prefs.nodeIntegration = false
+    prefs.nodeIntegrationInSubFrames = false
+    prefs.contextIsolation = true
+    prefs.sandbox = true
+    prefs.backgroundThrottling = false
+    params.partition = PREVIEW_PARTITION
+    if (!/^(https?|file|about|data):/.test(params.src ?? '')) params.src = 'about:blank'
+  })
+  win.webContents.on('did-attach-webview', (_e, guest) => {
+    // Links that open a new window load in the same card.
+    guest.setWindowOpenHandler(({ url }) => {
+      if (/^(https?|file):/.test(url)) guest.loadURL(url).catch(() => undefined)
+      return { action: 'deny' }
+    })
   })
 
   if (process.env.ELECTRON_RENDERER_URL) {
@@ -147,6 +196,14 @@ ipcMain.on('pty:send', (_e, id: string, text: string, images: string[], submit: 
 ipcMain.on('pty:resize', (_e, id: string, cols: number, rows: number) => ptys.resize(id, cols, rows))
 ipcMain.on('pty:kill', (_e, id: string) => ptys.kill(id))
 
+ipcMain.on('preview:attach', (e, id: string, webContentsId: number, data: PreviewData) =>
+  previews.attach(id, webContentsId, data, e.sender)
+)
+ipcMain.on('preview:detach', (_e, id: string, webContentsId: number) => previews.detach(id, webContentsId))
+ipcMain.on('preview:close', (_e, id: string) => previews.close(id))
+ipcMain.handle('preview:startServer', (_e, id: string) => previews.startServerFor(id))
+ipcMain.on('preview:stopServer', (_e, id: string) => previews.stopServer(id))
+
 app.whenReady().then(async () => {
   migrateLegacyData()
   // A packaged app gets its icon from build/icon.icns; in development the Dock would
@@ -167,9 +224,14 @@ app.whenReady().then(async () => {
     return net.fetch(pathToFileURL(file).toString())
   })
 
-  await ptys.listen()
+  previews.init()
+  await server.listen()
   createWindow()
 })
 
 app.on('window-all-closed', () => app.quit())
-app.on('will-quit', () => ptys.killAll())
+app.on('will-quit', () => {
+  ptys.killAll()
+  previews.stopAll()
+  server.close()
+})

@@ -82,3 +82,34 @@ export const SparkIcon = ({ size = 16, ...rest }: IconProps) => (
     <path d="M12 2l1.6 6.1L19.8 5l-3.9 5.1L22 12l-6.1 1.6 3.9 5.4-5.6-3.4L12 22l-1.6-6.4-5.6 3.4 3.9-5.4L2 12l6.1-1.9L4.2 5l6.2 3.1z" />
   </svg>
 )
+
+export const GlobeIcon = (p: IconProps) => (
+  <Icon {...p}>
+    <circle cx="8" cy="8" r="5.5" />
+    <path d="M2.5 8h11M8 2.5c1.6 1.6 2.3 3.4 2.3 5.5S9.6 11.9 8 13.5M8 2.5C6.4 4.1 5.7 5.9 5.7 8s.7 3.9 2.3 5.5" />
+  </Icon>
+)
+
+export const BackIcon = (p: IconProps) => (
+  <Icon {...p}>
+    <path d="M9.5 4L5.5 8l4 4" />
+  </Icon>
+)
+
+export const ForwardIcon = (p: IconProps) => (
+  <Icon {...p}>
+    <path d="M6.5 4l4 4-4 4" />
+  </Icon>
+)
+
+export const ReloadIcon = (p: IconProps) => (
+  <Icon {...p}>
+    <path d="M12.5 8a4.5 4.5 0 1 1-1.3-3.2M12.5 3v2.5H10" />
+  </Icon>
+)
+
+export const InspectIcon = (p: IconProps) => (
+  <Icon {...p}>
+    <path d="M6 5L3 8l3 3M10 5l3 3-3 3" />
+  </Icon>
+)

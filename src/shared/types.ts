@@ -34,13 +34,30 @@ export type TerminalData = {
   started: boolean
 }
 
+/** How to (re)start the dev server behind a preview. */
+export interface PreviewServer {
+  command: string
+  cwd: string
+  /** Port to wait for when the command doesn't print its URL. */
+  port?: number
+}
+
+export type PreviewData = {
+  /** Last page the preview showed; reloaded when the canvas is restored. */
+  url: string
+  /** The terminal whose Claude Code session opened this preview, drawn as a connecting line. */
+  terminalId?: string
+  /** Dev server started for this preview, so it can be started again after a restart. */
+  server?: PreviewServer
+}
+
 export interface SavedNode {
   id: string
-  type: 'prompt' | 'terminal'
+  type: 'prompt' | 'terminal' | 'preview'
   position: { x: number; y: number }
   width?: number
   height?: number
-  data: PromptData | TerminalData
+  data: PromptData | TerminalData | PreviewData
 }
 
 export interface CanvasState {
@@ -78,6 +95,22 @@ export interface HookEvent {
   notificationType?: string
 }
 
+/** Main asks the canvas to show a new preview card. */
+export interface PreviewOpenRequest {
+  id: string
+  url: string
+  terminalId?: string
+  server?: PreviewServer
+}
+
+export interface ServerStatus {
+  state: 'starting' | 'running' | 'exited'
+  url?: string
+  exitCode?: number | null
+  /** Last lines of output, shown while starting or after the server exited. */
+  tail?: string
+}
+
 export interface CanvasApi {
   loadState(): Promise<CanvasState | null>
   saveState(state: CanvasState): void
@@ -98,5 +131,23 @@ export interface CanvasApi {
     onData(cb: (id: string, data: string) => void): () => void
     onExit(cb: (id: string, code: number) => void): () => void
     onHook(cb: (e: HookEvent) => void): () => void
+  }
+  preview: {
+    /** Register a card's webview with main, which drives it for Claude's preview tools. */
+    attach(id: string, webContentsId: number, data: PreviewData): void
+    detach(id: string, webContentsId: number): void
+    /** The card was removed: stop its dev server. */
+    close(id: string): void
+    /** (Re)start the card's dev server and load it once it is up. */
+    startServer(id: string): Promise<{ error?: string }>
+    stopServer(id: string): void
+    onOpen(cb: (req: PreviewOpenRequest) => void): () => void
+    onResize(cb: (id: string, width: number, height: number) => void): () => void
+    /** True while one of Claude's preview tools is acting on the card. */
+    onActivity(cb: (id: string, active: boolean) => void): () => void
+    onServer(cb: (id: string, status: ServerStatus | null) => void): () => void
+    /** A tool needs keyboard focus in a card for a key press, then gives it back. */
+    onFocus(cb: (id: string) => void): () => void
+    onRestoreFocus(cb: () => void): () => void
   }
 }

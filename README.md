@@ -43,6 +43,15 @@ The packaged app and `npm run dev` share the same canvas data, so run one at a t
   new prompt with them; dropping one straight onto a terminal attaches it to the input there.
 - **Terminals**: drag by the title bar, `Shift+Enter` for a newline. The dot shows status
   (clay = working, amber = needs input, green = waiting).
+- **Browser previews**: Claude Code sessions get preview tools. Ask Claude to check its
+  work in the browser and it starts the dev server (`preview_start`) or opens a URL or
+  HTML file (`preview_open`) in a preview card next to its terminal, connected by a line
+  that animates while Claude uses the page. It can screenshot, read the page structure,
+  click, fill in forms, press keys, run JavaScript, and read console logs, network
+  requests and dev-server output. Local URLs a session opens (e.g. `vite --open`) also
+  land in its preview. The **Preview** toolbar button opens an empty card you can type a
+  URL into. Closing a card stops its dev server; after a restart, a card whose server
+  isn't running offers to start it again.
 - **Layout**: cards snap to the dot grid; resize any card from its edges or corners.
 - **Camera**: drag with the middle mouse button, or use `WASD` while nothing is selected, to
   pan; scroll or pinch to zoom (40%–100%). Left-dragging empty canvas draws a selection box.
@@ -57,6 +66,15 @@ The packaged app and `npm run dev` share the same canvas data, so run one at a t
   a pasted image path into an `[Image #N]` attachment), then the text, then Enter. A new
   session with images starts empty and gets its first message once `SessionStart` fires.
   Images are copied into the app's `images` folder so the originals can move.
+- Each session also gets `--mcp-config` pointing at the same local endpoint
+  (`/mcp/<terminal>`), a small MCP server in `src/main/mcp.ts` with the `preview_*` tools.
+  They're pre-approved, except `preview_start`, which runs a command and asks like Bash.
+  `src/main/preview.ts` drives each card's `<webview>` from the main process (Chrome
+  DevTools Protocol for input and screenshots, `webRequest` for network, process groups
+  for dev servers). Pages run sandboxed in their own persistent session. Dev servers are
+  read from the command, or from `.claude/launch.json` configurations.
+- `$BROWSER` in sessions is `resources/browser-shim.js`, which sends local URLs to the
+  canvas and everything else to your default browser.
 - `src/main/env.ts` builds the terminal environment from your login shell.
 - State lives in `~/Library/Application Support/VibeCanvas/canvas-state.json`
   (`VIBECANVAS_PROFILE=<dir>` uses a different folder).

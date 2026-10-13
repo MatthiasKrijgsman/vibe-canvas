@@ -1,16 +1,17 @@
-import { randomBytes } from 'node:crypto'
 import { existsSync, readdirSync } from 'node:fs'
-import { createServer, type Server } from 'node:http'
 import { homedir } from 'node:os'
 import { join } from 'node:path'
 import * as pty from 'node-pty'
 import type { HookEvent, PtyStartOptions, PtyStartResult } from '../shared/types'
 import { terminalEnv } from './env'
+import { PREVIEW_TOOLS_ALLOWED } from './mcp'
+import type { LocalServer } from './server'
 
 type Send = (channel: string, ...args: unknown[]) => void
 
 interface Session {
   proc: pty.IPty
+  cwd: string
   backlog: string
   pending: string
   flush: NodeJS.Timeout | null
@@ -42,46 +43,37 @@ function sessionExists(env: Record<string, string>, sessionId: string): boolean 
 
 export class PtyManager {
   private sessions = new Map<string, Session>()
-  private server: Server | null = null
-  private port = 0
-  private token = randomBytes(16).toString('hex')
 
-  constructor(private send: Send) {}
+  /** `browserShim` becomes $BROWSER, so local URLs a session opens show up as previews. */
+  constructor(
+    private send: Send,
+    private server: LocalServer,
+    private browserShim: string
+  ) {
+    server.route('POST', /^\/hook\/([\w-]+)$/, ({ match, body }, res) => {
+      res.writeHead(204).end()
+      this.onHook(match[1], body)
+    })
+  }
 
   /**
-   * Local endpoint that Claude Code hooks post to. Each terminal gets its id in the
+   * Claude Code hooks post to the local server. Each terminal gets its id in the
    * environment, so events can be routed back to the right canvas node.
    */
-  async listen(): Promise<void> {
-    this.server = createServer((req, res) => {
-      const url = new URL(req.url ?? '/', 'http://127.0.0.1')
-      const match = url.pathname.match(/^\/hook\/([\w-]+)$/)
-      if (req.method !== 'POST' || !match || url.searchParams.get('t') !== this.token) {
-        res.writeHead(404).end()
-        return
+  private onHook(id: string, body: string): void {
+    try {
+      const payload = JSON.parse(body)
+      const event: HookEvent = {
+        id,
+        event: payload.hook_event_name,
+        sessionId: payload.session_id,
+        notificationType: payload.notification_type
       }
-      let body = ''
-      req.on('data', (chunk) => (body += chunk))
-      req.on('end', () => {
-        res.writeHead(204).end()
-        try {
-          const payload = JSON.parse(body)
-          const event: HookEvent = {
-            id: match[1],
-            event: payload.hook_event_name,
-            sessionId: payload.session_id,
-            notificationType: payload.notification_type
-          }
-          this.send('pty:hook', event)
-          if (event.event === 'SessionStart') this.deliverInitialInput(event.id)
-        } catch {
-          // ignore malformed payloads
-        }
-      })
-    })
-    await new Promise<void>((resolve) => this.server!.listen(0, '127.0.0.1', resolve))
-    const addr = this.server.address()
-    this.port = typeof addr === 'object' && addr ? addr.port : 0
+      this.send('pty:hook', event)
+      if (event.event === 'SessionStart') this.deliverInitialInput(event.id)
+    } catch {
+      // ignore malformed payloads
+    }
   }
 
   private hookSettings(): string {
@@ -106,7 +98,18 @@ export class PtyManager {
       return { backlog: '', running: false, error: `Directory not found: ${opts.cwd}` }
     }
 
-    const args = ['--settings', this.hookSettings()]
+    // The preview tools come from VibeCanvas's own MCP endpoint, scoped to this terminal.
+    // Looking at and clicking around a preview is pre-approved; preview_start runs a
+    // command, so it asks like Bash does.
+    const mcp = { mcpServers: { vibecanvas: { type: 'http', url: this.server.url(`/mcp/${opts.id}`) } } }
+    const args = [
+      '--mcp-config',
+      JSON.stringify(mcp),
+      '--allowedTools',
+      PREVIEW_TOOLS_ALLOWED.join(','),
+      '--settings',
+      this.hookSettings()
+    ]
     if (opts.model) args.push('--model', opts.model)
     if (opts.effort) args.push('--effort', opts.effort)
     const images = opts.images ?? []
@@ -135,9 +138,10 @@ export class PtyManager {
         cwd: opts.cwd,
         env: {
           ...env,
-          VIBECANVAS_PORT: String(this.port),
+          BROWSER: this.browserShim,
+          VIBECANVAS_PORT: String(this.server.port),
           VIBECANVAS_TERMINAL: opts.id,
-          VIBECANVAS_TOKEN: this.token
+          VIBECANVAS_TOKEN: this.server.token
         }
       })
     } catch (err) {
@@ -146,6 +150,7 @@ export class PtyManager {
 
     const session: Session = {
       proc,
+      cwd: opts.cwd,
       backlog: '',
       pending: '',
       flush: null,
@@ -250,6 +255,10 @@ export class PtyManager {
     }).catch(() => undefined)
   }
 
+  cwd(id: string): string | undefined {
+    return this.sessions.get(id)?.cwd
+  }
+
   write(id: string, data: string): void {
     this.sessions.get(id)?.proc.write(data)
   }
@@ -272,6 +281,5 @@ export class PtyManager {
 
   killAll(): void {
     for (const id of [...this.sessions.keys()]) this.kill(id)
-    this.server?.close()
   }
 }

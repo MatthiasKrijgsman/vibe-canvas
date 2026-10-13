@@ -772,6 +772,165 @@ body.dragging-prompt * {
   }
 }
 
+/* Preview */
+
+.preview-card {
+  overflow: hidden;
+}
+
+.preview-card.active {
+  border-color: hsl(var(--brand-100) / 0.55);
+  box-shadow: 0 0 0 3px hsl(var(--brand-100) / 0.16), var(--shadow-card-raised);
+}
+
+.preview-nav {
+  display: flex;
+  margin-left: -4px;
+  flex-shrink: 0;
+}
+
+.card-header .icon-button.persistent {
+  opacity: 1;
+}
+.icon-button:disabled,
+.icon-button:disabled:hover {
+  opacity: 0.35;
+  background: transparent;
+  color: hsl(var(--text-400));
+}
+.card-header .icon-button.persistent:disabled {
+  opacity: 0.35;
+}
+
+.preview-address {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  flex: 1 1 auto;
+  min-width: 120px;
+  max-width: 560px;
+  /* Room left over past max-width stays free for dragging the card. */
+  margin-right: auto;
+  height: 26px;
+  padding: 0 10px;
+  border-radius: 7px;
+  background: hsl(var(--text-100) / 0.05);
+  transition: background 0.12s, box-shadow 0.12s;
+}
+.preview-address:focus-within {
+  background: var(--card-bg);
+  box-shadow: inset 0 0 0 1px hsl(var(--brand-100) / 0.6);
+}
+.preview-address input {
+  flex: 1;
+  min-width: 0;
+  border: none;
+  outline: none;
+  background: transparent;
+  font-family: var(--font-sans);
+  font-size: 12px;
+  color: hsl(var(--text-200));
+  user-select: text;
+  cursor: text;
+}
+.preview-address input::placeholder {
+  color: hsl(var(--text-400) / 0.8);
+}
+.preview-address-icon {
+  flex-shrink: 0;
+  color: hsl(var(--text-400));
+}
+
+.preview-server .status-dot {
+  width: 6px;
+  height: 6px;
+}
+
+.preview-body {
+  position: relative;
+  flex: 1;
+  min-height: 0;
+  background: #fff;
+  border-top: 0.5px solid hsl(var(--border-300) / 0.12);
+}
+
+.preview-body webview {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+}
+
+/* Pages swallow pointer events, which would stall drags across the canvas. */
+body.panning webview,
+body.dragging-prompt webview,
+.react-flow:has(.react-flow__node.dragging, .react-flow__resize-control:active, .react-flow__selection) webview {
+  pointer-events: none;
+}
+
+.preview-overlay {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  padding: 24px;
+  background: var(--card-bg);
+  font-size: 13px;
+  color: hsl(var(--text-200));
+  text-align: center;
+}
+.preview-overlay.quiet {
+  color: hsl(var(--text-400));
+}
+
+.preview-overlay-title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 15px;
+  font-weight: 500;
+  color: hsl(var(--text-100));
+}
+.preview-overlay-title code {
+  font-family: var(--font-mono);
+  font-size: 13px;
+  padding: 1px 6px;
+  border-radius: 5px;
+  background: hsl(var(--text-100) / 0.06);
+}
+
+.preview-overlay-detail {
+  max-width: 90%;
+  font-size: 12px;
+  color: hsl(var(--text-400));
+  overflow-wrap: anywhere;
+}
+
+.preview-log {
+  margin: 0;
+  width: min(640px, 100%);
+  max-height: 45%;
+  overflow: auto;
+  padding: 10px 12px;
+  border-radius: 8px;
+  background: hsl(var(--bg-300) / 0.7);
+  font-family: var(--font-mono);
+  font-size: 11px;
+  line-height: 1.5;
+  text-align: left;
+  white-space: pre-wrap;
+  color: hsl(var(--text-200));
+  user-select: text;
+}
+
+.preview-overlay-actions {
+  display: flex;
+  gap: 8px;
+}
+
 /* ---------- Resizing ---------- */
 
 .react-flow__resize-control.resize-line {
@@ -929,6 +1088,44 @@ body.panning * {
   to {
     stroke-dashoffset: -12;
   }
+}
+
+/* Preview ↔ session links */
+
+.link-edge path {
+  fill: none;
+}
+.link-edge-line {
+  stroke: hsl(var(--text-400) / 0.5);
+  stroke-width: 1.5;
+  stroke-dasharray: 5 5;
+  transition: stroke 0.2s;
+}
+.link-edge.active .link-edge-line {
+  stroke: hsl(var(--brand-100) / 0.22);
+  stroke-width: 4;
+  stroke-dasharray: none;
+}
+/* Flows from the session to the preview while Claude acts on it. */
+.link-edge-flow {
+  stroke: hsl(var(--brand-100));
+  stroke-width: 2;
+  stroke-linecap: round;
+  stroke-dasharray: 2 10;
+  animation: link-flow 0.6s linear infinite;
+}
+@keyframes link-flow {
+  to {
+    stroke-dashoffset: 12;
+  }
+}
+.link-edge-end {
+  fill: var(--card-bg);
+  stroke: hsl(var(--text-400) / 0.7);
+  stroke-width: 1.5;
+}
+.link-edge.active .link-edge-end {
+  stroke: hsl(var(--brand-100));
 }
 
 /* ---------- Start dialog ---------- */
