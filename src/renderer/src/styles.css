@@ -828,21 +828,16 @@ body.panning * {
   }
 }
 
-.run-cancel {
+.prompt-done {
   display: flex;
   align-items: center;
-  justify-content: center;
-  width: 18px;
-  height: 18px;
-  flex-shrink: 0;
-  border: none;
-  border-radius: 5px;
-  background: transparent;
-  color: hsl(var(--text-400));
-}
-.run-cancel:hover {
-  background: hsl(var(--text-100) / 0.07);
-  color: hsl(var(--text-100));
+  gap: 4px;
+  padding: 1px 7px 1px 5px;
+  border-radius: 999px;
+  background: hsl(var(--success-100) / 0.14);
+  color: hsl(var(--success-100));
+  font-size: 11px;
+  font-weight: 500;
 }
 
 .run-edge path {

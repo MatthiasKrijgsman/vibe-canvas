@@ -3,14 +3,14 @@ import { memo, useCallback, useEffect, useLayoutEffect, useRef, useState, type D
 import type { PromptData } from '../../../shared/types'
 import { pendingFocus, useCanvas } from '../canvasContext'
 import { GRID, snap } from '../grid'
-import { CloseIcon, NoteIcon } from '../icons'
+import { CheckIcon, CloseIcon, NoteIcon } from '../icons'
 import { hasImageFiles, imageUrl, importImages } from '../images'
 
 export type PromptNodeType = Node<PromptData & Record<string, unknown>, 'prompt'>
 
 function PromptNode({ id, data }: NodeProps<PromptNodeType>) {
   const { updateNode, updateNodeData, deleteElements } = useReactFlow()
-  const { runs, cancelRun, terminalTitle } = useCanvas()
+  const { runs, terminalTitle } = useCanvas()
   const inputRef = useRef<HTMLTextAreaElement>(null)
   const cardRef = useRef<HTMLDivElement>(null)
   const [dropping, setDropping] = useState(false)
@@ -58,13 +58,13 @@ function PromptNode({ id, data }: NodeProps<PromptNodeType>) {
     async (files: Iterable<File>) => {
       const paths = await importImages(files)
       if (paths.length) {
-        updateNodeData(id, (node) => ({ images: [...((node.data as PromptData).images ?? []), ...paths] }))
+        updateNodeData(id, (node) => ({ images: [...((node.data as PromptData).images ?? []), ...paths], completed: false }))
       }
     },
     [id, updateNodeData]
   )
 
-  const removeImage = (path: string) => updateNodeData(id, { images: images.filter((p) => p !== path) })
+  const removeImage = (path: string) => updateNodeData(id, { images: images.filter((p) => p !== path), completed: false })
 
   // While the prompt is running its contents are locked, so it doesn't accept new images.
   const onDragOver = (e: DragEvent) => {
@@ -119,6 +119,12 @@ function PromptNode({ id, data }: NodeProps<PromptNodeType>) {
           <NoteIcon size={14} />
           Prompt
         </span>
+        {data.completed && !run && (
+          <span className="prompt-done" title="Claude finished this prompt">
+            <CheckIcon size={12} strokeWidth={2} />
+            Done
+          </span>
+        )}
         <span style={{ flex: 1 }} />
         <button
           className="icon-button danger nodrag"
@@ -135,7 +141,7 @@ function PromptNode({ id, data }: NodeProps<PromptNodeType>) {
         value={data.text}
         disabled={!!run}
         spellCheck={false}
-        onChange={(e) => updateNodeData(id, { text: e.target.value })}
+        onChange={(e) => updateNodeData(id, { text: e.target.value, completed: false })}
         onPaste={(e) => {
           const files = [...e.clipboardData.files].filter((f) => f.type.startsWith('image/'))
           if (files.length) {
@@ -163,15 +169,10 @@ function PromptNode({ id, data }: NodeProps<PromptNodeType>) {
       )}
       <div className="prompt-footer">
         {run ? (
-          <>
-            <span className="run-status">
-              <span className="run-spinner" />
-              <span className="run-label">Running in {terminalTitle(run.terminalId)}</span>
-            </span>
-            <button className="run-cancel nodrag" title="Stop showing as running" onClick={() => cancelRun(id)}>
-              <CloseIcon size={10} />
-            </button>
-          </>
+          <span className="run-status">
+            <span className="run-spinner" />
+            <span className="run-label">Running in {terminalTitle(run.terminalId)}</span>
+          </span>
         ) : (
           <>
             <span>{dropping ? 'Drop to attach' : 'Drag onto a project or terminal'}</span>

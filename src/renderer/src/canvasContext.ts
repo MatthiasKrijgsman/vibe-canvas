@@ -15,7 +15,6 @@ export interface CanvasContextValue {
   projects: Project[]
   closeTerminal: (id: string) => void
   runs: Record<string, PromptRun>
-  cancelRun: (promptId: string) => void
   terminalTitle: (terminalId: string) => string
 }
 
@@ -24,7 +23,6 @@ export const CanvasContext = createContext<CanvasContextValue>({
   projects: [],
   closeTerminal: () => {},
   runs: {},
-  cancelRun: () => {},
   terminalTitle: () => ''
 })
 

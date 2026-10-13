@@ -8,6 +8,8 @@ export type PromptData = {
   text: string
   /** Absolute paths of images attached to the prompt (stored in the app's images folder). */
   images?: string[]
+  /** Set when Claude finished the last run of this prompt; cleared on edit or a new run. */
+  completed?: boolean
 }
 
 export type Effort = 'low' | 'medium' | 'high' | 'xhigh' | 'max'

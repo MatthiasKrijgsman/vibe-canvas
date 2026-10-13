@@ -390,16 +390,21 @@ function Workspace({ initial }: { initial: CanvasState | null }) {
 
   // ---------- Prompt runs (prompt → terminal, until Claude finishes) ----------
 
-  const startRun = useCallback((promptId: string, terminalId: string, terminalBusy: boolean) => {
-    setRuns((rs) => ({ ...rs, [promptId]: { terminalId, stopsLeft: terminalBusy ? 2 : 1 } }))
-  }, [])
+  const setCompleted = useCallback(
+    (promptIds: string[], completed: boolean) =>
+      setNodes((ns) =>
+        ns.map((n) => (n.type === 'prompt' && promptIds.includes(n.id) ? { ...n, data: { ...n.data, completed } } : n))
+      ),
+    [setNodes]
+  )
 
-  const cancelRun = useCallback((promptId: string) => {
-    setRuns((rs) => {
-      const { [promptId]: _, ...rest } = rs
-      return rest
-    })
-  }, [])
+  const startRun = useCallback(
+    (promptId: string, terminalId: string, terminalBusy: boolean) => {
+      setRuns((rs) => ({ ...rs, [promptId]: { terminalId, stopsLeft: terminalBusy ? 2 : 1 } }))
+      setCompleted([promptId], false)
+    },
+    [setCompleted]
+  )
 
   // A run ends at the Stop hook of the turn it started. If the terminal was busy when the
   // prompt was sent, the current turn's Stop comes first, unless our submit is seen.
@@ -407,24 +412,28 @@ function Workspace({ initial }: { initial: CanvasState | null }) {
     () =>
       onAnyTerminalHook((e) => {
         if (e.event !== 'Stop' && e.event !== 'UserPromptSubmit') return
-        setRuns((rs) => {
-          let changed = false
-          const next: Record<string, PromptRun> = {}
-          for (const [promptId, run] of Object.entries(rs)) {
-            if (run.terminalId !== e.id) {
-              next[promptId] = run
-            } else if (e.event === 'UserPromptSubmit') {
-              next[promptId] = { ...run, stopsLeft: 1 }
-              changed ||= run.stopsLeft !== 1
-            } else {
-              changed = true
-              if (run.stopsLeft > 1) next[promptId] = { ...run, stopsLeft: run.stopsLeft - 1 }
-            }
+        let changed = false
+        const finished: string[] = []
+        const next: Record<string, PromptRun> = {}
+        for (const [promptId, run] of Object.entries(runsRef.current)) {
+          if (run.terminalId !== e.id) {
+            next[promptId] = run
+          } else if (e.event === 'UserPromptSubmit') {
+            next[promptId] = { ...run, stopsLeft: 1 }
+            changed ||= run.stopsLeft !== 1
+          } else {
+            changed = true
+            if (run.stopsLeft > 1) next[promptId] = { ...run, stopsLeft: run.stopsLeft - 1 }
+            else finished.push(promptId)
           }
-          return changed ? next : rs
-        })
+        }
+        if (!changed) return
+        // Update the ref right away so a second hook before the next render sees this state.
+        runsRef.current = next
+        setRuns(next)
+        if (finished.length) setCompleted(finished, true)
       }),
-    []
+    [setCompleted]
   )
 
   // Runs end when their terminal exits, or when the prompt or terminal is removed.
@@ -648,8 +657,8 @@ function Workspace({ initial }: { initial: CanvasState | null }) {
 
   const terminals = useMemo(() => nodes.filter((n): n is TerminalNodeType => n.type === 'terminal'), [nodes])
   const context = useMemo(
-    () => ({ dropTarget, projects, closeTerminal, runs, cancelRun, terminalTitle }),
-    [dropTarget, projects, closeTerminal, runs, cancelRun, terminalTitle]
+    () => ({ dropTarget, projects, closeTerminal, runs, terminalTitle }),
+    [dropTarget, projects, closeTerminal, runs, terminalTitle]
   )
 
   return (

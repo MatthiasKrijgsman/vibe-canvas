@@ -52,6 +52,12 @@ export const NoteIcon = (p: IconProps) => (
   </Icon>
 )
 
+export const CheckIcon = (p: IconProps) => (
+  <Icon {...p}>
+    <path d="M3.5 8.5l3 3 6-7" />
+  </Icon>
+)
+
 export const FitIcon = (p: IconProps) => (
   <Icon {...p}>
     <path d="M2.5 5.5v-3h3M10.5 2.5h3v3M13.5 10.5v3h-3M5.5 13.5h-3v-3" />
