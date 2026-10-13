@@ -1,0 +1,38 @@
+appId: io.github.matthiaskrijgsman.vibecanvas
+productName: VibeCanvas
+copyright: Copyright © 2026 Matthias Krijgsman
+
+directories:
+  buildResources: build # build/icon.icns
+  output: dist
+
+files:
+  - out/**/*
+  # Only node-pty ships in node_modules (the UI is bundled by electron-vite); drop its
+  # sources and Windows binaries.
+  - '!node_modules/node-pty/{src,deps,third_party,scripts,typings,binding.gyp}'
+  - '!node_modules/node-pty/prebuilds/win32-*'
+
+# node-pty's native module and spawn-helper must live outside the asar archive to be
+# loaded and executed; node-pty looks for them in app.asar.unpacked.
+asarUnpack:
+  - node_modules/node-pty/**
+
+# node-pty's N-API prebuilds work in Electron as-is; don't recompile it.
+npmRebuild: false
+
+mac:
+  category: public.app-category.developer-tools
+  darkModeSupport: true
+  target:
+    - target: dmg
+      arch: arm64
+    - target: zip
+      arch: arm64
+  # Ad-hoc signature: enough to run on this Mac. To share the app with others, sign it
+  # with a Developer ID certificate (set `identity`) and notarize it instead.
+  identity: '-'
+  hardenedRuntime: false
+
+dmg:
+  title: VibeCanvas

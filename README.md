@@ -15,6 +15,17 @@ npm install
 npm run dev
 ```
 
+## Package as an app
+
+```bash
+npm run package       # dist/VibeCanvas-<version>-arm64.dmg and .zip
+npm run package:dir   # just dist/mac-arm64/VibeCanvas.app (faster)
+```
+
+Builds are ad-hoc signed, which is enough to run them on your own Mac. To give the app to
+others, sign it with a Developer ID certificate and notarize it (see `electron-builder.yml`).
+The packaged app and `npm run dev` share the same canvas data, so run one at a time.
+
 ## Using it
 
 - **New prompt**: double-click the canvas, `⌘N`, or the toolbar button.
