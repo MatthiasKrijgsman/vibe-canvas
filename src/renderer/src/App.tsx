@@ -40,6 +40,12 @@ const nodeTypes = { prompt: PromptNode, terminal: TerminalNode }
 const edgeTypes = { run: RunEdge }
 
 const DOT_SIZE = 1.4
+/** Screen pixels per second when moving the camera with WASD. */
+const PAN_SPEED = 900
+const MIN_ZOOM = 0.4
+const MAX_ZOOM = 1
+
+const clampZoom = (zoom: number) => Math.min(MAX_ZOOM, Math.max(MIN_ZOOM, zoom))
 
 const PROMPT_WIDTH = 14 * GRID
 const TERMINAL_SIZE = { width: 32 * GRID, height: 20 * GRID }
@@ -141,12 +147,14 @@ function Workspace({ initial }: { initial: CanvasState | null }) {
   const [projects, setProjects] = useState<Project[]>(initial?.projects ?? [])
   const [dropTarget, setDropTarget] = useState<DropTarget>(null)
   const [ghost, setGhost] = useState<{ x: number; y: number; label: string } | null>(null)
-  const [zoom, setZoom] = useState(initial?.viewport.zoom ?? 1)
+  const [zoom, setZoom] = useState(clampZoom(initial?.viewport.zoom ?? 1))
   const [pendingStart, setPendingStart] = useState<PendingStart | null>(null)
   const [runs, setRuns] = useState<Record<string, PromptRun>>({})
   const runsRef = useRef(runs)
   runsRef.current = runs
-  const viewportRef = useRef(initial?.viewport ?? { x: 0, y: 0, zoom: 1 })
+  const viewportRef = useRef(
+    initial ? { ...initial.viewport, zoom: clampZoom(initial.viewport.zoom) } : { x: 0, y: 0, zoom: 1 }
+  )
   const dropTargetRef = useRef<DropTarget>(null)
   const dragStart = useRef<{ id: string; position: XYPosition } | null>(null)
   const containerRef = useRef<HTMLDivElement>(null)
@@ -179,7 +187,7 @@ function Workspace({ initial }: { initial: CanvasState | null }) {
     }
   }, [])
 
-  // ---------- Camera: pan with the middle mouse button only ----------
+  // ---------- Camera: pan with the middle mouse button ----------
 
   useEffect(() => {
     const el = containerRef.current!
@@ -212,6 +220,72 @@ function Workspace({ initial }: { initial: CanvasState | null }) {
     return () => {
       el.removeEventListener('mousedown', onDown, true)
       el.removeEventListener('auxclick', onAux, true)
+    }
+  }, [rf, scheduleSave])
+
+  // ---------- Camera: move with WASD while nothing is selected ----------
+
+  useEffect(() => {
+    const directions: Record<string, XYPosition> = {
+      KeyW: { x: 0, y: 1 },
+      KeyA: { x: 1, y: 0 },
+      KeyS: { x: 0, y: -1 },
+      KeyD: { x: -1, y: 0 }
+    }
+    const held = new Set<string>()
+    let frame = 0
+    let last = 0
+
+    const step = (time: number) => {
+      let dx = 0
+      let dy = 0
+      held.forEach((code) => {
+        dx += directions[code].x
+        dy += directions[code].y
+      })
+      const length = Math.hypot(dx, dy)
+      if (length > 0) {
+        const distance = (PAN_SPEED * (time - last)) / 1000 / length
+        const vp = rf.getViewport()
+        rf.setViewport({ x: vp.x + dx * distance, y: vp.y + dy * distance, zoom: vp.zoom })
+      }
+      last = time
+      frame = held.size ? requestAnimationFrame(step) : 0
+    }
+    const save = () => {
+      viewportRef.current = rf.getViewport()
+      scheduleSave()
+    }
+
+    const onDown = (e: KeyboardEvent) => {
+      if (!(e.code in directions) || e.metaKey || e.ctrlKey || e.altKey) return
+      const target = e.target as HTMLElement
+      if (target.isContentEditable || target.closest('input, textarea, select')) return
+      if (document.querySelector('[role="dialog"]') || rf.getNodes().some((n) => n.selected)) return
+      e.preventDefault()
+      held.add(e.code)
+      if (!frame) {
+        last = performance.now()
+        frame = requestAnimationFrame(step)
+      }
+    }
+    const onUp = (e: KeyboardEvent) => {
+      if (held.delete(e.code) && !held.size) save()
+    }
+    const onBlur = () => {
+      if (!held.size) return
+      held.clear()
+      save()
+    }
+
+    window.addEventListener('keydown', onDown)
+    window.addEventListener('keyup', onUp)
+    window.addEventListener('blur', onBlur)
+    return () => {
+      window.removeEventListener('keydown', onDown)
+      window.removeEventListener('keyup', onUp)
+      window.removeEventListener('blur', onBlur)
+      cancelAnimationFrame(frame)
     }
   }, [rf, scheduleSave])
 
@@ -608,14 +682,13 @@ function Workspace({ initial }: { initial: CanvasState | null }) {
               scheduleSave()
             }}
             defaultViewport={viewportRef.current}
-            minZoom={0.2}
-            maxZoom={2}
+            minZoom={MIN_ZOOM}
+            maxZoom={MAX_ZOOM}
             snapToGrid
             snapGrid={[GRID, GRID]}
             panOnDrag={false}
             selectionOnDrag
             selectionMode={SelectionMode.Partial}
-            panOnScroll
             autoPanOnNodeDrag={false}
             autoPanOnSelection={false}
             nodesConnectable={false}
