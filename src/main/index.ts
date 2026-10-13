@@ -149,6 +149,10 @@ ipcMain.on('pty:kill', (_e, id: string) => ptys.kill(id))
 
 app.whenReady().then(async () => {
   migrateLegacyData()
+  // A packaged app gets its icon from build/icon.icns; in development the Dock would
+  // otherwise show Electron's default icon.
+  const icon = join(app.getAppPath(), 'resources/icon.png')
+  if (process.platform === 'darwin' && existsSync(icon)) app.dock?.setIcon(icon)
 
   protocol.handle('claude-font', (req) => {
     const file = findFont(new URL(req.url).hostname)
