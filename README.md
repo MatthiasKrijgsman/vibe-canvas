@@ -33,17 +33,19 @@ The packaged app and `npm run dev` share the same canvas data, so run one at a t
 - **Start a session**: drag a prompt by its header onto a project in the sidebar, then pick
   the model (Opus 5.5 by default) and effort level. The `+` on a project starts an empty session.
   A session keeps its model and effort when it is resumed.
-- **Send to a session**: drag a prompt onto a terminal. Prompts snap back so you can reuse them.
-  While Claude works on it, the prompt is locked and linked to the terminal by an animated line;
-  it unlocks when Claude finishes (the `×` in its footer unlocks it early).
+- **Send to a session**: drag a prompt onto a terminal. The card stays where it is while an
+  orange chip follows the pointer, so you can reuse it. While Claude works on it, the prompt is
+  locked and linked to the terminal by an animated line; when Claude finishes it unlocks and
+  shows a green *Done* check.
+- **Move a prompt**: drag it over open canvas until a dashed outline appears, then release.
 - **Images**: drop image files onto a prompt (or paste with `⌘V` while editing it) and they
   go along as attachments when the prompt is sent. Dropping images on empty canvas starts a
   new prompt with them; dropping one straight onto a terminal attaches it to the input there.
 - **Terminals**: drag by the title bar, `Shift+Enter` for a newline. The dot shows status
   (clay = working, amber = needs input, green = waiting).
 - **Layout**: cards snap to the dot grid; resize any card from its edges or corners.
-- **Camera**: drag with the middle mouse button (or two-finger scroll) to pan, pinch to zoom.
-  Left-dragging empty canvas draws a selection box.
+- **Camera**: drag with the middle mouse button, or use `WASD` while nothing is selected, to
+  pan; scroll or pinch to zoom (40%–100%). Left-dragging empty canvas draws a selection box.
 
 ## How it works
 

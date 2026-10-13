@@ -57,6 +57,8 @@
   --terminal-bg: #ffffff;
   --shadow-card: 0 1px 2px hsl(0 0% 0% / 0.04), 0 4px 16px hsl(0 0% 0% / 0.06);
   --shadow-lifted: 0 2px 4px hsl(0 0% 0% / 0.06), 0 12px 32px hsl(0 0% 0% / 0.12);
+  --shadow-card-rest: 0 0.5px 1px hsl(0 0% 0% / 0.04), 0 1px 3px hsl(0 0% 0% / 0.03);
+  --shadow-card-raised: 0 1px 2px hsl(0 0% 0% / 0.05), 0 6px 18px hsl(0 0% 0% / 0.08);
   color-scheme: light;
 }
 
@@ -82,6 +84,8 @@
     --terminal-bg: #1f1e1d;
     --shadow-card: 0 1px 2px hsl(0 0% 0% / 0.2), 0 4px 16px hsl(0 0% 0% / 0.25);
     --shadow-lifted: 0 2px 4px hsl(0 0% 0% / 0.3), 0 16px 40px hsl(0 0% 0% / 0.45);
+    --shadow-card-rest: 0 0.5px 1px hsl(0 0% 0% / 0.16), 0 1px 3px hsl(0 0% 0% / 0.12);
+    --shadow-card-raised: 0 1px 3px hsl(0 0% 0% / 0.22), 0 8px 24px hsl(0 0% 0% / 0.3);
     color-scheme: dark;
   }
 }
@@ -340,7 +344,7 @@ button {
   font-family: var(--font-sans);
 }
 
-.react-flow__node.snap-back {
+.react-flow__node.gliding {
   transition: transform 0.22s cubic-bezier(0.2, 0.8, 0.2, 1);
 }
 
@@ -416,22 +420,79 @@ button {
   color: hsl(var(--brand-100));
 }
 
-.drag-ghost {
+/* ---------- Dragging a prompt ---------- */
+
+body.dragging-prompt,
+body.dragging-prompt * {
+  cursor: grabbing !important;
+}
+
+.drag-chip {
   position: fixed;
-  z-index: 50;
+  z-index: 51;
   pointer-events: none;
-  transform: translate(14px, 14px);
   display: flex;
   align-items: center;
   gap: 6px;
-  padding: 6px 10px;
-  border-radius: 8px;
-  background: hsl(var(--text-100));
-  color: hsl(var(--bg-100));
+  max-width: 280px;
+  padding: 5px 11px 5px 9px;
+  border-radius: 999px;
+  background: hsl(var(--brand-100));
+  color: #fff;
+  font-family: var(--font-sans);
   font-size: 12px;
   font-weight: 500;
-  box-shadow: var(--shadow-lifted);
   white-space: nowrap;
+  box-shadow: 0 2px 8px hsl(var(--brand-000) / 0.35);
+}
+.drag-chip svg {
+  flex-shrink: 0;
+}
+.drag-chip span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.drag-arrow {
+  position: fixed;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  z-index: 50;
+  pointer-events: none;
+  overflow: visible;
+}
+.drag-arrow > path {
+  fill: none;
+  stroke: hsl(var(--brand-100));
+  stroke-width: 2;
+  stroke-linecap: round;
+}
+.drag-arrow marker path,
+.drag-arrow circle {
+  fill: hsl(var(--brand-100));
+}
+
+/* Where a dragged prompt lands when released over open canvas. */
+/* Above every card, even the selected (elevated) one being dragged. */
+.react-flow__viewport-portal {
+  z-index: 2000;
+  pointer-events: none;
+}
+.landing-outline {
+  position: absolute;
+  top: 0;
+  left: 0;
+  border-radius: 14px;
+  border: 1.5px dashed hsl(var(--brand-100));
+  background: hsl(var(--brand-100) / 0.06);
+  pointer-events: none;
+  animation: landing-in 0.12s ease-out;
+}
+@keyframes landing-in {
+  from {
+    opacity: 0;
+  }
 }
 
 /* ---------- Cards (prompt + terminal) ---------- */
@@ -443,12 +504,12 @@ button {
   border-radius: 14px;
   background: var(--card-bg);
   border: 0.5px solid hsl(var(--border-300) / 0.15);
-  box-shadow: var(--shadow-card);
+  box-shadow: var(--shadow-card-rest);
   transition: box-shadow 0.15s, border-color 0.15s;
 }
 .react-flow__node.selected .card,
 .react-flow__node.dragging .card {
-  box-shadow: var(--shadow-lifted);
+  box-shadow: var(--shadow-card-raised);
   border-color: hsl(var(--border-300) / 0.28);
 }
 
@@ -535,7 +596,7 @@ button {
 
 .prompt-card.image-drop {
   border-color: hsl(var(--brand-100));
-  box-shadow: 0 0 0 3px hsl(var(--brand-100) / 0.22), var(--shadow-lifted);
+  box-shadow: 0 0 0 3px hsl(var(--brand-100) / 0.22), var(--shadow-card-raised);
 }
 
 .prompt-images {
@@ -599,7 +660,7 @@ button {
 
 .terminal-card.drop-target {
   border-color: hsl(var(--brand-100));
-  box-shadow: 0 0 0 3px hsl(var(--brand-100) / 0.25), var(--shadow-lifted);
+  box-shadow: 0 0 0 3px hsl(var(--brand-100) / 0.25), var(--shadow-card-raised);
 }
 
 .terminal-chip {
@@ -762,7 +823,7 @@ body.panning * {
 .prompt-card.running {
   position: relative;
   border-color: hsl(var(--brand-100) / 0.35);
-  box-shadow: 0 0 0 4px hsl(var(--brand-100) / 0.08), var(--shadow-card);
+  box-shadow: 0 0 0 4px hsl(var(--brand-100) / 0.08), var(--shadow-card-rest);
 }
 
 /* A bright arc that travels around the card's border while the prompt runs. */

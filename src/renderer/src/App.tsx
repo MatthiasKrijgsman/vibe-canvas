@@ -7,9 +7,11 @@ import {
   SelectionMode,
   useNodesState,
   useReactFlow,
+  ViewportPortal,
   type Edge,
   type OnBeforeDelete,
   type OnNodeDrag,
+  type OnNodesChange,
   type XYPosition
 } from '@xyflow/react'
 import '@xyflow/react/dist/base.css'
@@ -28,6 +30,7 @@ import { FitIcon, MinusIcon, NoteIcon, PlusIcon, SparkIcon } from './icons'
 import { GRID, snap, snapPoint } from './grid'
 import { hasImageFiles, importImages } from './images'
 import PromptNode, { type PromptNodeType } from './nodes/PromptNode'
+import PromptDragOverlay from './PromptDragOverlay'
 import TerminalNode, { type TerminalNodeType } from './nodes/TerminalNode'
 import RunEdge from './RunEdge'
 import Sidebar from './Sidebar'
@@ -44,6 +47,9 @@ const DOT_SIZE = 1.4
 const PAN_SPEED = 900
 const MIN_ZOOM = 0.4
 const MAX_ZOOM = 1
+
+/** How long a dragged prompt has to be over open canvas before its landing outline shows. */
+const LANDING_DELAY = 250
 
 const clampZoom = (zoom: number) => Math.min(MAX_ZOOM, Math.max(MIN_ZOOM, zoom))
 
@@ -127,6 +133,16 @@ function hitTest(x: number, y: number, draggedId: string): DropTarget {
   return null
 }
 
+/** Where the line from the card's center to `to` leaves the card, or null if `to` is inside it. */
+function edgePoint(r: DOMRect, to: XYPosition): XYPosition | null {
+  const cx = r.left + r.width / 2
+  const cy = r.top + r.height / 2
+  const dx = to.x - cx
+  const dy = to.y - cy
+  const t = Math.min(r.width / 2 / Math.abs(dx), r.height / 2 / Math.abs(dy))
+  return t >= 1 ? null : { x: cx + dx * t, y: cy + dy * t }
+}
+
 function pointer(e: MouseEvent | TouchEvent): { x: number; y: number } {
   const p = 'touches' in e ? (e.touches[0] ?? e.changedTouches[0]) : e
   return { x: p.clientX, y: p.clientY }
@@ -135,6 +151,16 @@ function pointer(e: MouseEvent | TouchEvent): { x: number; y: number } {
 function firstLine(text: string): string | undefined {
   const line = text.trim().split('\n')[0]
   return line ? (line.length > 60 ? `${line.slice(0, 57)}…` : line) : undefined
+}
+
+/** A prompt being dragged. The card itself stays put; only this preview follows the pointer. */
+interface PromptDrag {
+  pointer: XYPosition
+  /** Where the arrow leaves the card; null while the pointer is over the card. */
+  from: XYPosition | null
+  label: string
+  /** Where the card lands if released here, once the outline shows (flow coordinates). */
+  landing: (XYPosition & { width: number; height: number }) | null
 }
 
 interface PendingStart {
@@ -146,7 +172,7 @@ function Workspace({ initial }: { initial: CanvasState | null }) {
   const [nodes, setNodes, onNodesChange] = useNodesState<AppNode>(initial?.nodes.map(restoreNode) ?? [])
   const [projects, setProjects] = useState<Project[]>(initial?.projects ?? [])
   const [dropTarget, setDropTarget] = useState<DropTarget>(null)
-  const [ghost, setGhost] = useState<{ x: number; y: number; label: string } | null>(null)
+  const [promptDrag, setPromptDrag] = useState<PromptDrag | null>(null)
   const [zoom, setZoom] = useState(clampZoom(initial?.viewport.zoom ?? 1))
   const [pendingStart, setPendingStart] = useState<PendingStart | null>(null)
   const [runs, setRuns] = useState<Record<string, PromptRun>>({})
@@ -156,7 +182,9 @@ function Workspace({ initial }: { initial: CanvasState | null }) {
     initial ? { ...initial.viewport, zoom: clampZoom(initial.viewport.zoom) } : { x: 0, y: 0, zoom: 1 }
   )
   const dropTargetRef = useRef<DropTarget>(null)
-  const dragStart = useRef<{ id: string; position: XYPosition } | null>(null)
+  const dragStart = useRef<{ id: string; position: XYPosition; prompt: boolean } | null>(null)
+  const promptDragRef = useRef<PromptDrag | null>(null)
+  const endPromptDrag = useRef<(() => void) | null>(null)
   const containerRef = useRef<HTMLDivElement>(null)
   const rf = useReactFlow<AppNode>()
 
@@ -532,52 +560,131 @@ function Workspace({ initial }: { initial: CanvasState | null }) {
 
   // ---------- Drag & drop ----------
 
-  const onNodeDragStart: OnNodeDrag<AppNode> = useCallback((_e, node) => {
-    dragStart.current = { id: node.id, position: { ...node.position } }
-  }, [])
-
-  const snapBack = useCallback(
+  const glideTo = useCallback(
     (id: string, position: XYPosition) => {
-      setNodes((ns) => ns.map((n) => (n.id === id ? { ...n, position, className: 'snap-back' } : n)))
+      setNodes((ns) => ns.map((n) => (n.id === id ? { ...n, position, className: 'gliding' } : n)))
       setTimeout(() => setNodes((ns) => ns.map((n) => (n.id === id ? { ...n, className: undefined } : n))), 260)
     },
     [setNodes]
   )
 
-  const onNodeDrag: OnNodeDrag<AppNode> = useCallback(
-    (e, node) => {
+  // While a prompt is dragged nothing on the canvas moves; the card only moves once dropped.
+  const onNodesChangeGuarded: OnNodesChange<AppNode> = useCallback(
+    (changes) => onNodesChange(dragStart.current?.prompt ? changes.filter((c) => c.type !== 'position') : changes),
+    [onNodesChange]
+  )
+
+  // React Flow only reports drags in whole grid steps, so the preview follows the mouse itself.
+  const beginPromptDrag = useCallback(
+    (node: PromptNodeType, e: MouseEvent | TouchEvent) => {
+      const start = pointer(e)
+      const grab = rf.screenToFlowPosition(start, { snapToGrid: false })
+      grab.x -= node.position.x
+      grab.y -= node.position.y
+      const { width, height } = nodeRect(node)
+      const card = document.querySelector(`.react-flow__node[data-id="${CSS.escape(node.id)}"]`)
       // A running prompt can be moved around, but not sent anywhere else.
-      if (node.type !== 'prompt' || runsRef.current[node.id]) return
-      const { x, y } = pointer(e)
-      const target = hitTest(x, y, node.id)
-      if (target?.kind !== dropTargetRef.current?.kind || target?.id !== dropTargetRef.current?.id) {
-        dropTargetRef.current = target
-        setDropTarget(target)
+      const running = !!runsRef.current[node.id]
+      const name = firstLine(node.data.text) ?? 'Prompt'
+      let last = start
+      let timer = 0
+      let landingShown = false
+
+      const update = () => {
+        const target = running ? null : hitTest(last.x, last.y, node.id)
+        if (target?.kind !== dropTargetRef.current?.kind || target?.id !== dropTargetRef.current?.id) {
+          dropTargetRef.current = target
+          setDropTarget(target)
+        }
+        const bounds = containerRef.current!.getBoundingClientRect()
+        const onCanvas =
+          !target && last.x >= bounds.left && last.x <= bounds.right && last.y >= bounds.top && last.y <= bounds.bottom
+        // The outline waits a moment, so it doesn't flash on the way to a project or terminal.
+        if (!onCanvas) {
+          window.clearTimeout(timer)
+          timer = 0
+          landingShown = false
+        } else if (!timer) {
+          timer = window.setTimeout(() => {
+            landingShown = true
+            update()
+          }, LANDING_DELAY)
+        }
+        const flow = rf.screenToFlowPosition(last, { snapToGrid: false })
+        const project = target?.kind === 'project' ? projects.find((p) => p.id === target.id) : null
+        const next: PromptDrag = {
+          pointer: last,
+          from: card ? edgePoint(card.getBoundingClientRect(), last) : null,
+          label: project
+            ? `Start Claude Code in ${project.name}`
+            : target?.kind === 'terminal'
+              ? `Send to ${terminalTitle(target.id)}`
+              : name,
+          landing: landingShown ? { ...snapPoint({ x: flow.x - grab.x, y: flow.y - grab.y }), width, height } : null
+        }
+        promptDragRef.current = next
+        setPromptDrag(next)
       }
-      const project = target?.kind === 'project' ? projects.find((p) => p.id === target.id) : null
-      setGhost(project ? { x, y, label: `Start Claude Code in ${project.name}` } : null)
+      const move = (ev: PointerEvent) => {
+        last = { x: ev.clientX, y: ev.clientY }
+        update()
+      }
+      // React Flow skips the drag-stop callback when the node is deleted mid-drag.
+      const up = () =>
+        setTimeout(() => {
+          if (endPromptDrag.current !== end) return
+          dragStart.current = null
+          end()
+        })
+      const end = () => {
+        window.clearTimeout(timer)
+        window.removeEventListener('pointermove', move)
+        window.removeEventListener('pointerup', up)
+        document.body.classList.remove('dragging-prompt')
+        endPromptDrag.current = null
+        dropTargetRef.current = null
+        setDropTarget(null)
+        promptDragRef.current = null
+        setPromptDrag(null)
+      }
+
+      endPromptDrag.current?.()
+      endPromptDrag.current = end
+      // Pointer events, because React Flow's drag handling swallows the mouse events.
+      window.addEventListener('pointermove', move)
+      window.addEventListener('pointerup', up)
+      document.body.classList.add('dragging-prompt')
+      update()
     },
-    [projects]
+    [rf, projects, terminalTitle]
+  )
+
+  const onNodeDragStart: OnNodeDrag<AppNode> = useCallback(
+    (e, node) => {
+      dragStart.current = { id: node.id, position: { ...node.position }, prompt: node.type === 'prompt' }
+      if (node.type === 'prompt') beginPromptDrag(node, e)
+    },
+    [beginPromptDrag]
   )
 
   const onNodeDragStop: OnNodeDrag<AppNode> = useCallback(
     (e, node) => {
-      const target = dropTargetRef.current
       const start = dragStart.current
-      dropTargetRef.current = null
       dragStart.current = null
-      setDropTarget(null)
-      setGhost(null)
       if (!start) return
-      // Released over the sidebar without a target: don't leave the card hidden under it.
-      const overSidebar = pointer(e).x < (containerRef.current?.getBoundingClientRect().left ?? 0)
-      if (!target || node.type !== 'prompt') {
-        if (overSidebar) snapBack(node.id, start.position)
+      if (node.type !== 'prompt') {
+        // Released over the sidebar: don't leave the card hidden under it.
+        if (pointer(e).x < (containerRef.current?.getBoundingClientRect().left ?? 0)) glideTo(node.id, start.position)
         return
       }
 
-      // The prompt stays on the canvas: animate it back to where the drag began.
-      snapBack(node.id, start.position)
+      const target = dropTargetRef.current
+      const landing = promptDragRef.current?.landing
+      endPromptDrag.current?.()
+      if (!target) {
+        if (landing) glideTo(node.id, { x: landing.x, y: landing.y })
+        return
+      }
 
       const { text, images = [] } = node.data
       if (target.kind === 'project') {
@@ -592,7 +699,7 @@ function Workspace({ initial }: { initial: CanvasState | null }) {
         startRun(node.id, target.id, busy)
       }
     },
-    [projects, snapBack, startRun]
+    [projects, glideTo, startRun]
   )
 
   // Terminals close through their own button (with confirmation), not the delete key.
@@ -677,9 +784,8 @@ function Workspace({ initial }: { initial: CanvasState | null }) {
             edges={edges}
             nodeTypes={nodeTypes}
             edgeTypes={edgeTypes}
-            onNodesChange={onNodesChange}
+            onNodesChange={onNodesChangeGuarded}
             onNodeDragStart={onNodeDragStart}
-            onNodeDrag={onNodeDrag}
             onNodeDragStop={onNodeDragStop}
             onBeforeDelete={onBeforeDelete}
             onDoubleClick={onDoubleClick}
@@ -706,6 +812,18 @@ function Workspace({ initial }: { initial: CanvasState | null }) {
             proOptions={{ hideAttribution: true }}
           >
             {/* Offset puts the dots exactly on multiples of GRID, where nodes snap to. */}
+            {promptDrag?.landing && (
+              <ViewportPortal>
+                <div
+                  className="landing-outline"
+                  style={{
+                    transform: `translate(${promptDrag.landing.x}px, ${promptDrag.landing.y}px)`,
+                    width: promptDrag.landing.width,
+                    height: promptDrag.landing.height
+                  }}
+                />
+              </ViewportPortal>
+            )}
             <Background variant={BackgroundVariant.Dots} gap={GRID} size={DOT_SIZE} offset={DOT_SIZE / 2 - GRID / 2} />
             <Panel position="bottom-center">
               <div className="toolbar">
@@ -735,11 +853,7 @@ function Workspace({ initial }: { initial: CanvasState | null }) {
             </div>
           )}
         </div>
-        {ghost && (
-          <div className="drag-ghost" style={{ left: ghost.x, top: ghost.y }}>
-            {ghost.label}
-          </div>
-        )}
+        {promptDrag && <PromptDragOverlay pointer={promptDrag.pointer} from={promptDrag.from} label={promptDrag.label} />}
         {pendingStart && (
           <StartDialog
             project={pendingStart.project}
