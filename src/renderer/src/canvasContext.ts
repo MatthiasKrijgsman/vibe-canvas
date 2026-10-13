@@ -28,5 +28,8 @@ export const CanvasContext = createContext<CanvasContextValue>({
 
 export const useCanvas = () => useContext(CanvasContext)
 
+/** Drag data type of a project dragged from the sidebar onto the canvas. */
+export const PROJECT_DRAG_TYPE = 'application/x-vibecanvas-project'
+
 /** Node ids that should grab keyboard focus once they mount. */
 export const pendingFocus = new Set<string>()

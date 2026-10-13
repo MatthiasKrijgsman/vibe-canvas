@@ -1,5 +1,5 @@
 import type { Project } from '../../shared/types'
-import { useCanvas } from './canvasContext'
+import { PROJECT_DRAG_TYPE, useCanvas } from './canvasContext'
 import { CloseIcon, FolderIcon, PlusIcon, TerminalIcon } from './icons'
 import type { TerminalNodeType } from './nodes/TerminalNode'
 
@@ -41,7 +41,17 @@ export default function Sidebar({ terminals, onAddProject, onRemoveProject, onOp
           const isTarget = dropTarget?.kind === 'project' && dropTarget.id === project.id
           return (
             <div key={project.id} className={`project${isTarget ? ' drop-target' : ''}`} data-project-id={project.id}>
-              <div className="project-row" title={project.path}>
+              <div
+                className="project-row"
+                title={project.path}
+                draggable
+                onDragStart={(e) => {
+                  e.dataTransfer.setData(PROJECT_DRAG_TYPE, project.id)
+                  e.dataTransfer.effectAllowed = 'copy'
+                  document.body.classList.add('dragging-project')
+                }}
+                onDragEnd={() => document.body.classList.remove('dragging-project')}
+              >
                 <FolderIcon className="project-icon" />
                 <div className="project-text">
                   <span className="project-name">{project.name}</span>
@@ -76,7 +86,9 @@ export default function Sidebar({ terminals, onAddProject, onRemoveProject, onOp
           <FolderIcon size={14} />
           Add project
         </button>
-        <div className="hint">Double-click the canvas to write a prompt, then drag it onto a project.</div>
+        <div className="hint">
+          Drag a project onto the canvas to start a session there, or double-click the canvas to write a prompt.
+        </div>
       </div>
     </aside>
   )

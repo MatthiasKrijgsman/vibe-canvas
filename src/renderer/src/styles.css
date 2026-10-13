@@ -205,6 +205,12 @@ button {
 .project-row:hover {
   background: hsl(var(--text-100) / 0.05);
 }
+.project-row[draggable='true'] {
+  cursor: grab;
+}
+.project-row[draggable='true']:active {
+  cursor: grabbing;
+}
 .project-row .icon-button {
   opacity: 0;
 }
@@ -864,6 +870,7 @@ body.dragging-prompt * {
 /* Pages swallow pointer events, which would stall drags across the canvas. */
 body.panning webview,
 body.dragging-prompt webview,
+body.dragging-project webview,
 .react-flow:has(.react-flow__node.dragging, .react-flow__resize-control:active, .react-flow__selection) webview {
   pointer-events: none;
 }

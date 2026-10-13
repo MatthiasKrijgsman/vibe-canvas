@@ -26,7 +26,7 @@ import {
   type MouseEvent as ReactMouseEvent
 } from 'react'
 import type { CanvasState, Effort, PreviewOpenRequest, Project, SavedNode, TerminalData } from '../../shared/types'
-import { CanvasContext, pendingFocus, type DropTarget, type PromptRun } from './canvasContext'
+import { CanvasContext, pendingFocus, PROJECT_DRAG_TYPE, type DropTarget, type PromptRun } from './canvasContext'
 import { FitIcon, GlobeIcon, MinusIcon, NoteIcon, PlusIcon, SparkIcon } from './icons'
 import { GRID, snap, snapPoint } from './grid'
 import { hasImageFiles, importImages } from './images'
@@ -182,6 +182,8 @@ interface PromptDrag {
 interface PendingStart {
   project: Project
   prompt?: { id: string; text: string; images: string[]; position: XYPosition; width: number }
+  /** Where a project dragged onto the canvas was dropped: the new terminal's top-left. */
+  position?: XYPosition
 }
 
 function Workspace({ initial }: { initial: CanvasState | null }) {
@@ -191,6 +193,8 @@ function Workspace({ initial }: { initial: CanvasState | null }) {
   const [promptDrag, setPromptDrag] = useState<PromptDrag | null>(null)
   const [zoom, setZoom] = useState(clampZoom(initial?.viewport.zoom ?? 1))
   const [pendingStart, setPendingStart] = useState<PendingStart | null>(null)
+  // Where a project dragged from the sidebar would land (flow coordinates).
+  const [projectLanding, setProjectLanding] = useState<XYPosition | null>(null)
   const [runs, setRuns] = useState<Record<string, PromptRun>>({})
   const runsRef = useRef(runs)
   runsRef.current = runs
@@ -373,7 +377,9 @@ function Workspace({ initial }: { initial: CanvasState | null }) {
       project: Project,
       options: { model: string; effort: Effort },
       prompt?: { text: string; images?: string[] },
-      anchor?: { position: XYPosition; width: number }
+      anchor?: { position: XYPosition; width: number },
+      /** Exactly here, e.g. where a project was dropped, instead of the nearest free spot. */
+      at?: XYPosition
     ): string => {
       const id = `term-${crypto.randomUUID()}`
       const start = anchor
@@ -399,7 +405,7 @@ function Workspace({ initial }: { initial: CanvasState | null }) {
         {
           id,
           type: 'terminal',
-          position: findFreeSpot(ns, start, TERMINAL_SIZE),
+          position: at ? snapPoint(at) : findFreeSpot(ns, start, TERMINAL_SIZE),
           ...TERMINAL_SIZE,
           dragHandle: '.terminal-drag',
           selected: true,
@@ -620,13 +626,14 @@ function Workspace({ initial }: { initial: CanvasState | null }) {
   const confirmStart = useCallback(
     (model: string, effort: Effort) => {
       if (!pendingStart) return
-      const { project, prompt } = pendingStart
+      const { project, prompt, position } = pendingStart
       setPendingStart(null)
       const terminalId = createTerminal(
         project,
         { model, effort },
         prompt && { text: prompt.text, images: prompt.images },
-        prompt && { position: prompt.position, width: prompt.width }
+        prompt && { position: prompt.position, width: prompt.width },
+        position
       )
       if (prompt && (prompt.text.trim() || prompt.images.length)) startRun(prompt.id, terminalId, false)
     },
@@ -797,22 +804,61 @@ function Workspace({ initial }: { initial: CanvasState | null }) {
     [rf, createPrompt]
   )
 
-  // Dropping images on empty canvas starts a new prompt with them attached.
-  const onCanvasDragOver = useCallback((e: ReactDragEvent) => {
-    if (!hasImageFiles(e.dataTransfer)) return
-    e.preventDefault()
-    e.dataTransfer.dropEffect = 'copy'
+  /** Top-left of a terminal centered on the pointer. */
+  const terminalDropPoint = useCallback(
+    (e: ReactDragEvent): XYPosition => {
+      const p = rf.screenToFlowPosition({ x: e.clientX, y: e.clientY }, { snapToGrid: false })
+      return snapPoint({ x: p.x - TERMINAL_SIZE.width / 2, y: p.y - TERMINAL_SIZE.height / 2 })
+    },
+    [rf]
+  )
+
+  // Dropping images on empty canvas starts a new prompt with them attached; dropping a
+  // project from the sidebar starts a session where it lands.
+  const onCanvasDragOver = useCallback(
+    (e: ReactDragEvent) => {
+      if (e.dataTransfer.types.includes(PROJECT_DRAG_TYPE)) {
+        e.preventDefault()
+        e.dataTransfer.dropEffect = 'copy'
+        const at = terminalDropPoint(e)
+        setProjectLanding((cur) => (cur?.x === at.x && cur?.y === at.y ? cur : at))
+        return
+      }
+      if (!hasImageFiles(e.dataTransfer)) return
+      e.preventDefault()
+      e.dataTransfer.dropEffect = 'copy'
+    },
+    [terminalDropPoint]
+  )
+
+  const onCanvasDragLeave = useCallback((e: ReactDragEvent) => {
+    if (!e.currentTarget.contains(e.relatedTarget as Node | null)) setProjectLanding(null)
+  }, [])
+
+  // A cancelled drag (Escape, or released outside the canvas) never reaches onDrop.
+  useEffect(() => {
+    const clear = () => setProjectLanding(null)
+    window.addEventListener('dragend', clear)
+    return () => window.removeEventListener('dragend', clear)
   }, [])
 
   const onCanvasDrop = useCallback(
     async (e: ReactDragEvent) => {
+      const projectId = e.dataTransfer.getData(PROJECT_DRAG_TYPE)
+      if (projectId) {
+        e.preventDefault()
+        setProjectLanding(null)
+        const project = projects.find((p) => p.id === projectId)
+        if (project) setPendingStart({ project, position: terminalDropPoint(e) })
+        return
+      }
       if (!hasImageFiles(e.dataTransfer)) return
       e.preventDefault()
       const p = rf.screenToFlowPosition({ x: e.clientX, y: e.clientY })
       const images = await importImages(e.dataTransfer.files)
       if (images.length) createPrompt({ x: p.x - GRID, y: p.y - GRID }, images)
     },
-    [rf, createPrompt]
+    [rf, createPrompt, projects, terminalDropPoint]
   )
 
   // Without this, Electron navigates to any file dropped outside a drop zone.
@@ -871,6 +917,7 @@ function Workspace({ initial }: { initial: CanvasState | null }) {
             onNodesDelete={onNodesDelete}
             onDoubleClick={onDoubleClick}
             onDragOver={onCanvasDragOver}
+            onDragLeave={onCanvasDragLeave}
             onDrop={onCanvasDrop}
             onMove={(_e, vp) => setZoom(vp.zoom)}
             onMoveEnd={(_e, vp) => {
@@ -893,6 +940,17 @@ function Workspace({ initial }: { initial: CanvasState | null }) {
             proOptions={{ hideAttribution: true }}
           >
             {/* Offset puts the dots exactly on multiples of GRID, where nodes snap to. */}
+            {(projectLanding || pendingStart?.position) && (
+              <ViewportPortal>
+                <div
+                  className="landing-outline"
+                  style={{
+                    transform: `translate(${(projectLanding ?? pendingStart!.position!).x}px, ${(projectLanding ?? pendingStart!.position!).y}px)`,
+                    ...TERMINAL_SIZE
+                  }}
+                />
+              </ViewportPortal>
+            )}
             {promptDrag?.landing && (
               <ViewportPortal>
                 <div
@@ -934,7 +992,7 @@ function Workspace({ initial }: { initial: CanvasState | null }) {
             <div className="empty-canvas">
               <SparkIcon size={28} className="spark" />
               <h1>What should Claude work on?</h1>
-              <p>Double-click anywhere to write a prompt, then drag it onto a project.</p>
+              <p>Double-click anywhere to write a prompt, or drag a project here to start a session.</p>
             </div>
           )}
         </div>

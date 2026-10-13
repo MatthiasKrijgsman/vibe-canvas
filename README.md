@@ -31,7 +31,8 @@ The packaged app and `npm run dev` share the same canvas data, so run one at a t
 - **New prompt**: double-click the canvas, `⌘N`, or the toolbar button.
 - **Add a project**: the `+` next to *Projects* (any folder).
 - **Start a session**: drag a prompt by its header onto a project in the sidebar, then pick
-  the model (Opus 5.5 by default) and effort level. The `+` on a project starts an empty session.
+  the model (Opus 5.5 by default) and effort level. To start an empty session, drag a project
+  from the sidebar onto the canvas (the terminal opens where you drop it) or use its `+`.
   A session keeps its model and effort when it is resumed.
 - **Send to a session**: drag a prompt onto a terminal. The card stays where it is while an
   orange chip follows the pointer, so you can reuse it. While Claude works on it, the prompt is
