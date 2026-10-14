@@ -30,6 +30,13 @@ export type TerminalData = {
   /** --model / --effort the session runs with (also applied when resuming). */
   model?: string
   effort?: Effort
+  /**
+   * Run in a new git worktree (--worktree). Once Claude Code reports the worktree it made,
+   * `cwd` points into it, so restores resume there.
+   */
+  worktree?: boolean
+  /** --remote-control: the session can also be driven from claude.ai and the Claude app. */
+  remoteControl?: boolean
   /** True once the session has been launched at least once, so restores use --resume. */
   started: boolean
 }
@@ -77,6 +84,9 @@ export interface PtyStartOptions {
   images?: string[]
   model?: string
   effort?: Effort
+  /** Create a new git worktree; ignored when `cwd` already is one Claude Code created. */
+  worktree?: boolean
+  remoteControl?: boolean
   cols: number
   rows: number
 }
@@ -92,6 +102,8 @@ export interface HookEvent {
   id: string
   event: string
   sessionId?: string
+  /** Directory the session runs in, which differs from the project for worktree sessions. */
+  cwd?: string
   notificationType?: string
 }
 

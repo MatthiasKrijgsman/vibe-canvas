@@ -25,7 +25,7 @@ import {
   type DragEvent as ReactDragEvent,
   type MouseEvent as ReactMouseEvent
 } from 'react'
-import type { CanvasState, Effort, PreviewOpenRequest, Project, SavedNode, TerminalData } from '../../shared/types'
+import type { CanvasState, PreviewOpenRequest, Project, SavedNode, TerminalData } from '../../shared/types'
 import { CanvasContext, pendingFocus, PROJECT_DRAG_TYPE, type DropTarget, type PromptRun } from './canvasContext'
 import { FitIcon, GlobeIcon, MinusIcon, NoteIcon, PlusIcon, SparkIcon } from './icons'
 import { GRID, snap, snapPoint } from './grid'
@@ -37,7 +37,7 @@ import PromptDragOverlay from './PromptDragOverlay'
 import TerminalNode, { type TerminalNodeType } from './nodes/TerminalNode'
 import RunEdge from './RunEdge'
 import Sidebar from './Sidebar'
-import StartDialog from './StartDialog'
+import StartDialog, { type SessionOptions } from './StartDialog'
 import { getTerminalStatus, onAnyTerminalHook, onTerminalStatusChange, sendPrompt } from './terminals'
 
 export type AppNode = PromptNodeType | TerminalNodeType | PreviewNodeType
@@ -375,7 +375,7 @@ function Workspace({ initial }: { initial: CanvasState | null }) {
   const createTerminal = useCallback(
     (
       project: Project,
-      options: { model: string; effort: Effort },
+      options: SessionOptions,
       prompt?: { text: string; images?: string[] },
       anchor?: { position: XYPosition; width: number },
       /** Exactly here, e.g. where a project was dropped, instead of the nearest free spot. */
@@ -397,6 +397,8 @@ function Workspace({ initial }: { initial: CanvasState | null }) {
         initialImages: prompt?.images?.length ? prompt.images : undefined,
         model: options.model,
         effort: options.effort,
+        worktree: options.worktree || undefined,
+        remoteControl: options.remoteControl || undefined,
         started: false
       }
       pendingFocus.add(id)
@@ -624,13 +626,13 @@ function Workspace({ initial }: { initial: CanvasState | null }) {
   )
 
   const confirmStart = useCallback(
-    (model: string, effort: Effort) => {
+    (options: SessionOptions) => {
       if (!pendingStart) return
       const { project, prompt, position } = pendingStart
       setPendingStart(null)
       const terminalId = createTerminal(
         project,
-        { model, effort },
+        options,
         prompt && { text: prompt.text, images: prompt.images },
         prompt && { position: prompt.position, width: prompt.width },
         position

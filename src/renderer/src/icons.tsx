@@ -113,3 +113,20 @@ export const InspectIcon = (p: IconProps) => (
     <path d="M6 5L3 8l3 3M10 5l3 3-3 3" />
   </Icon>
 )
+
+export const BranchIcon = (p: IconProps) => (
+  <Icon {...p}>
+    <circle cx="5" cy="3.75" r="1.5" />
+    <circle cx="5" cy="12.25" r="1.5" />
+    <circle cx="11" cy="5.25" r="1.5" />
+    <path d="M5 5.25v5.5M11 6.75c0 2.5-2 3-6 4" />
+  </Icon>
+)
+
+/** A phone, for sessions that can also be driven remotely. */
+export const RemoteIcon = (p: IconProps) => (
+  <Icon {...p}>
+    <rect x="4.5" y="2" width="7" height="12" rx="1.75" />
+    <path d="M7 11.75h2" />
+  </Icon>
+)

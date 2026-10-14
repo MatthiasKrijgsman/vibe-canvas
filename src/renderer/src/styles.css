@@ -1304,6 +1304,77 @@ body.panning * {
   box-shadow: 0 1px 2px hsl(0 0% 0% / 0.12), 0 0 0 0.5px hsl(var(--border-300) / 0.15);
 }
 
+.dialog-toggles {
+  display: flex;
+  flex-direction: column;
+  margin: -8px 0 20px;
+}
+
+.dialog-toggle {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 6px;
+  border: none;
+  border-radius: 8px;
+  background: transparent;
+  text-align: left;
+}
+.dialog-toggle:hover {
+  background: hsl(var(--text-100) / 0.04);
+}
+.dialog-toggle-icon {
+  display: flex;
+  color: hsl(var(--text-400));
+}
+.dialog-toggle.on .dialog-toggle-icon {
+  color: hsl(var(--brand-100));
+}
+.dialog-toggle-text {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  min-width: 0;
+}
+.dialog-toggle-label {
+  font-size: 13px;
+  font-weight: 500;
+  color: hsl(var(--text-100));
+}
+.dialog-toggle-description {
+  font-size: 12px;
+  color: hsl(var(--text-400));
+}
+
+.switch {
+  position: relative;
+  flex-shrink: 0;
+  width: 28px;
+  height: 16px;
+  border-radius: 8px;
+  background: hsl(var(--text-100) / 0.14);
+  transition: background 0.14s;
+}
+.switch::after {
+  content: '';
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  background: #fff;
+  box-shadow: 0 1px 2px hsl(0 0% 0% / 0.2);
+  transition: transform 0.14s cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+.dialog-toggle.on .switch {
+  background: hsl(var(--brand-000));
+}
+.dialog-toggle.on .switch::after {
+  transform: translateX(12px);
+}
+
 .dialog-actions {
   display: flex;
   justify-content: flex-end;

@@ -41,6 +41,9 @@ function sessionExists(env: Record<string, string>, sessionId: string): boolean 
   }
 }
 
+/** Claude Code puts the worktrees it creates in <repo>/.claude/worktrees/<name>. */
+const isClaudeWorktree = (dir: string) => /[\\/]\.claude[\\/]worktrees[\\/][^\\/]+[\\/]?$/.test(dir)
+
 export class PtyManager {
   private sessions = new Map<string, Session>()
 
@@ -67,10 +70,16 @@ export class PtyManager {
         id,
         event: payload.hook_event_name,
         sessionId: payload.session_id,
+        cwd: payload.cwd,
         notificationType: payload.notification_type
       }
       this.send('pty:hook', event)
-      if (event.event === 'SessionStart') this.deliverInitialInput(event.id)
+      if (event.event === 'SessionStart') {
+        // A --worktree session moves into its worktree; previews it starts should run there.
+        const session = this.sessions.get(id)
+        if (session && event.cwd) session.cwd = event.cwd
+        this.deliverInitialInput(event.id)
+      }
     } catch {
       // ignore malformed payloads
     }
@@ -112,6 +121,7 @@ export class PtyManager {
     ]
     if (opts.model) args.push('--model', opts.model)
     if (opts.effort) args.push('--effort', opts.effort)
+    if (opts.remoteControl) args.push('--remote-control')
     const images = opts.images ?? []
     let initialInput: Session['initialInput']
     // Resume when Claude Code has a transcript for this session; otherwise (e.g. the app
@@ -120,6 +130,8 @@ export class PtyManager {
       args.push('--resume', opts.sessionId)
     } else {
       args.push('--session-id', opts.sessionId)
+      // Starting over inside the worktree a previous launch made must not nest another one.
+      if (opts.worktree && !isClaudeWorktree(opts.cwd)) args.push('--worktree')
       if (images.length) {
         // Images only become attachments when pasted into the input, so start empty and
         // send the first message once the session reports it is ready.

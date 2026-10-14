@@ -1,32 +1,42 @@
-import { useEffect, useState } from 'react'
+import { type ReactNode, useEffect, useState } from 'react'
 import type { Effort, Project } from '../../shared/types'
-import { FolderIcon } from './icons'
+import { BranchIcon, FolderIcon, RemoteIcon } from './icons'
 import { imageUrl } from './images'
 import { DEFAULT_EFFORT, DEFAULT_MODEL, EFFORTS, MODELS } from './models'
+
+export interface SessionOptions {
+  model: string
+  effort: Effort
+  worktree: boolean
+  remoteControl: boolean
+}
 
 interface Props {
   project: Project
   prompt?: { text: string; images?: string[] }
-  onStart: (model: string, effort: Effort) => void
+  onStart: (options: SessionOptions) => void
   onCancel: () => void
 }
 
-/** Asked before a new session starts: which model and effort level to run with. */
+/** Asked before a new session starts: which model and effort level to run with, and where. */
 export default function StartDialog({ project, prompt, onStart, onCancel }: Props) {
   const [model, setModel] = useState<string>(DEFAULT_MODEL)
   const [effort, setEffort] = useState<Effort>(DEFAULT_EFFORT)
+  const [worktree, setWorktree] = useState(false)
+  const [remoteControl, setRemoteControl] = useState(false)
+  const start = (m = model) => onStart({ model: m, effort, worktree, remoteControl })
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (e.key === 'Escape') onCancel()
       else if (e.key === 'Enter' && !e.shiftKey) {
         e.preventDefault()
-        onStart(model, effort)
+        onStart({ model, effort, worktree, remoteControl })
       }
     }
     window.addEventListener('keydown', onKey, true)
     return () => window.removeEventListener('keydown', onKey, true)
-  }, [model, effort, onStart, onCancel])
+  }, [model, effort, worktree, remoteControl, onStart, onCancel])
 
   const images = prompt?.images ?? []
 
@@ -61,7 +71,7 @@ export default function StartDialog({ project, prompt, onStart, onCancel }: Prop
               key={m.id}
               className={`model-option${model === m.id ? ' selected' : ''}`}
               onClick={() => setModel(m.id)}
-              onDoubleClick={() => onStart(m.id, effort)}
+              onDoubleClick={() => start(m.id)}
             >
               <span className="model-name">{m.name}</span>
               <span className="model-description">{m.description}</span>
@@ -78,16 +88,59 @@ export default function StartDialog({ project, prompt, onStart, onCancel }: Prop
           ))}
         </div>
 
+        <div className="dialog-toggles">
+          <Toggle
+            icon={<BranchIcon size={14} />}
+            label="Worktree"
+            description="Work on a new branch in its own git worktree"
+            checked={worktree}
+            onChange={setWorktree}
+          />
+          <Toggle
+            icon={<RemoteIcon size={14} />}
+            label="Remote Control"
+            description="Continue the session from claude.ai or the Claude app"
+            checked={remoteControl}
+            onChange={setRemoteControl}
+          />
+        </div>
+
         <div className="dialog-actions">
           <button className="button ghost" onClick={onCancel}>
             Cancel
           </button>
-          <button className="button brand" onClick={() => onStart(model, effort)}>
+          <button className="button brand" onClick={() => start()}>
             Start session
             <kbd>↵</kbd>
           </button>
         </div>
       </div>
     </div>
+  )
+}
+
+interface ToggleProps {
+  icon: ReactNode
+  label: string
+  description: string
+  checked: boolean
+  onChange: (checked: boolean) => void
+}
+
+function Toggle({ icon, label, description, checked, onChange }: ToggleProps) {
+  return (
+    <button
+      className={`dialog-toggle${checked ? ' on' : ''}`}
+      role="switch"
+      aria-checked={checked}
+      onClick={() => onChange(!checked)}
+    >
+      <span className="dialog-toggle-icon">{icon}</span>
+      <span className="dialog-toggle-text">
+        <span className="dialog-toggle-label">{label}</span>
+        <span className="dialog-toggle-description">{description}</span>
+      </span>
+      <span className="switch" />
+    </button>
   )
 }

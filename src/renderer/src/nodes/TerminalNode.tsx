@@ -7,7 +7,7 @@ import { memo, useCallback, useEffect, useRef, useState, type CSSProperties } fr
 import type { TerminalData, TerminalStatus } from '../../../shared/types'
 import { pendingFocus, useCanvas } from '../canvasContext'
 import { snap } from '../grid'
-import { CloseIcon, FolderIcon, ResumeIcon } from '../icons'
+import { BranchIcon, CloseIcon, FolderIcon, RemoteIcon, ResumeIcon } from '../icons'
 import { hasImageFiles, importImages } from '../images'
 import { EFFORTS, modelName } from '../models'
 import { onTerminalData, onTerminalHook, setTerminalStatus, useTerminalStatus } from '../terminals'
@@ -56,6 +56,8 @@ function TerminalNode({ id, data }: NodeProps<TerminalNodeType>) {
       images: d.initialImages,
       model: d.model,
       effort: d.effort,
+      worktree: d.worktree,
+      remoteControl: d.remoteControl,
       cols: term.cols,
       rows: term.rows
     })
@@ -99,6 +101,10 @@ function TerminalNode({ id, data }: NodeProps<TerminalNodeType>) {
     const offHook = onTerminalHook(id, (e) => {
       if (e.sessionId && e.sessionId !== dataRef.current.sessionId) {
         updateNodeData(id, { sessionId: e.sessionId })
+      }
+      // Remember the worktree Claude Code made, so the session resumes inside it.
+      if (e.event === 'SessionStart' && dataRef.current.worktree && e.cwd && e.cwd !== dataRef.current.cwd) {
+        updateNodeData(id, { cwd: e.cwd })
       }
     })
     term.onData((input) => window.canvas.pty.write(id, input))
@@ -171,9 +177,20 @@ function TerminalNode({ id, data }: NodeProps<TerminalNodeType>) {
             {data.effort && ` · ${EFFORTS.find((e) => e.id === data.effort)?.name ?? data.effort}`}
           </span>
         )}
+        {data.remoteControl && (
+          <span className="terminal-chip" title="Remote Control: continue this session from claude.ai or the Claude app">
+            <RemoteIcon size={12} />
+          </span>
+        )}
         <span className="terminal-chip" title={data.cwd}>
           <FolderIcon size={12} />
           {projectName}
+          {data.worktree && (
+            <>
+              <BranchIcon size={12} />
+              {data.cwd !== project?.path ? data.cwd.split('/').pop() : 'worktree'}
+            </>
+          )}
         </span>
         <button className="icon-button danger nodrag" title="Close session" onClick={() => closeTerminal(id)}>
           <CloseIcon size={14} />
