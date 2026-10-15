@@ -856,8 +856,14 @@ body.dragging-prompt * {
   position: relative;
   flex: 1;
   min-height: 0;
-  background: #fff;
+  background: var(--card-bg);
+  /* Keeps the divider from blending with the white behind a page. */
+  background-clip: padding-box;
   border-top: 0.5px solid hsl(var(--border-300) / 0.12);
+}
+/* White only behind a page, so it can't bleed past the overlay's edges. */
+.preview-body.showing-page {
+  background-color: #fff;
 }
 
 .preview-body webview {

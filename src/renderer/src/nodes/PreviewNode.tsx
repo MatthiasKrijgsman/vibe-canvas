@@ -263,7 +263,7 @@ function PreviewNode({ id, data }: NodeProps<PreviewNodeType>) {
           <CloseIcon size={14} />
         </button>
       </div>
-      <div className="preview-body nodrag nowheel nopan">
+      <div className={`preview-body nodrag nowheel nopan${overlay ? '' : ' showing-page'}`}>
         <webview
           ref={viewRef}
           src={initialUrl.current}
