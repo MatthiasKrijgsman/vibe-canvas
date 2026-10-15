@@ -1,4 +1,4 @@
-import { Handle, NodeResizer, Position, useReactFlow, type Node, type NodeProps } from '@xyflow/react'
+import { NodeResizer, useReactFlow, type Node, type NodeProps } from '@xyflow/react'
 import { memo, useEffect, useMemo, useRef, useState, type MouseEvent } from 'react'
 import Markdown, { type Components } from 'react-markdown'
 import remarkGfm from 'remark-gfm'
@@ -6,6 +6,7 @@ import type { DocumentContent, DocumentData } from '../../../shared/types'
 import { snap } from '../grid'
 import { CloseIcon, DocumentIcon, ExternalIcon } from '../icons'
 import { usePreviewActive } from '../previews'
+import SideHandles from '../SideHandles'
 
 export type DocumentNodeType = Node<DocumentData & Record<string, unknown>, 'document'>
 
@@ -113,8 +114,7 @@ function DocumentNode({ id, data }: NodeProps<DocumentNodeType>) {
         onResizeEnd={(_e, r) => updateNode(id, { position: { x: snap(r.x), y: snap(r.y) }, width: snap(r.width), height: snap(r.height) })}
       />
       {/* Anchors for the line to the session that opened this document. */}
-      <Handle id="left" type="source" position={Position.Left} isConnectable={false} className="run-handle" />
-      <Handle id="right" type="source" position={Position.Right} isConnectable={false} className="run-handle" />
+      <SideHandles type="source" />
       <div className="card-header document-drag">
         <span className="card-label">
           <DocumentIcon size={14} />

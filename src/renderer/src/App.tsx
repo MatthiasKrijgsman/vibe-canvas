@@ -37,6 +37,7 @@ import PromptNode, { type PromptNodeType } from './nodes/PromptNode'
 import PromptDragOverlay from './PromptDragOverlay'
 import TerminalNode, { type TerminalNodeType } from './nodes/TerminalNode'
 import RunEdge from './RunEdge'
+import type { Side } from './SideHandles'
 import Sidebar from './Sidebar'
 import StartDialog, { type SessionOptions } from './StartDialog'
 import { getTerminalStatus, onAnyTerminalHook, onTerminalStatusChange, sendPrompt } from './terminals'
@@ -129,6 +130,28 @@ function nodeRect(node: AppNode) {
     width: node.width ?? node.measured?.width ?? PROMPT_WIDTH,
     height: node.height ?? node.measured?.height ?? 168
   }
+}
+
+type Rect = ReturnType<typeof nodeRect>
+
+/** The pair of opposite sides, one on each card, whose midpoints are closest together. */
+function facingSides(a: Rect, b: Rect): [Side, Side] {
+  const mid = (r: Rect, side: Side) => ({
+    x: side === 'left' ? r.x : side === 'right' ? r.x + r.width : r.x + r.width / 2,
+    y: side === 'top' ? r.y : side === 'bottom' ? r.y + r.height : r.y + r.height / 2
+  })
+  const pairs: [Side, Side][] = [
+    ['right', 'left'],
+    ['left', 'right'],
+    ['bottom', 'top'],
+    ['top', 'bottom']
+  ]
+  const dist = ([sa, sb]: [Side, Side]) => {
+    const p = mid(a, sa)
+    const q = mid(b, sb)
+    return Math.hypot(p.x - q.x, p.y - q.y)
+  }
+  return pairs.reduce((best, pair) => (dist(pair) < dist(best) ? pair : best))
 }
 
 /** Walk downward from `start` until the box no longer overlaps an existing node. */
@@ -587,16 +610,14 @@ function Workspace({ initial }: { initial: CanvasState | null }) {
         const prompt = nodes.find((n) => n.id === promptId)
         const terminal = nodes.find((n) => n.id === run.terminalId)
         if (!prompt || !terminal) return []
-        const p = nodeRect(prompt)
-        const t = nodeRect(terminal)
-        const rightward = p.x + p.width / 2 <= t.x + t.width / 2
+        const [sourceHandle, targetHandle] = facingSides(nodeRect(prompt), nodeRect(terminal))
         return [
           {
             id: `run-${promptId}`,
             source: promptId,
             target: run.terminalId,
-            sourceHandle: rightward ? 'right' : 'left',
-            targetHandle: rightward ? 'left' : 'right',
+            sourceHandle,
+            targetHandle,
             type: 'run',
             selectable: false,
             focusable: false,
@@ -609,16 +630,14 @@ function Workspace({ initial }: { initial: CanvasState | null }) {
         if ((preview.type !== 'preview' && preview.type !== 'document') || !preview.data.terminalId) return []
         const terminal = nodes.find((n) => n.id === preview.data.terminalId)
         if (!terminal) return []
-        const p = nodeRect(preview)
-        const t = nodeRect(terminal)
-        const rightward = t.x + t.width / 2 <= p.x + p.width / 2
+        const [sourceHandle, targetHandle] = facingSides(nodeRect(preview), nodeRect(terminal))
         return [
           {
             id: `link-${preview.id}`,
             source: preview.id,
             target: terminal.id,
-            sourceHandle: rightward ? 'left' : 'right',
-            targetHandle: rightward ? 'right' : 'left',
+            sourceHandle,
+            targetHandle,
             type: 'link',
             selectable: false,
             focusable: false,

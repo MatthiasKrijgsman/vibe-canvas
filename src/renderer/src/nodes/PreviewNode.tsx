@@ -1,4 +1,4 @@
-import { Handle, NodeResizer, Position, useReactFlow, type Node, type NodeProps } from '@xyflow/react'
+import { NodeResizer, useReactFlow, type Node, type NodeProps } from '@xyflow/react'
 import type { DidFailLoadEvent, DidNavigateEvent, DidNavigateInPageEvent, PageTitleUpdatedEvent, WebviewTag } from 'electron'
 import { memo, useEffect, useRef, useState, type FormEvent } from 'react'
 import type { PreviewData } from '../../../shared/types'
@@ -7,6 +7,7 @@ import { pendingFocus } from '../canvasContext'
 import { snap } from '../grid'
 import { BackIcon, CloseIcon, ForwardIcon, GlobeIcon, InspectIcon, ReloadIcon, ResumeIcon } from '../icons'
 import { onPreviewFocus, onPreviewResize, usePreviewActive, useServerStatus } from '../previews'
+import SideHandles from '../SideHandles'
 
 export type PreviewNodeType = Node<PreviewData & Record<string, unknown>, 'preview'>
 
@@ -210,8 +211,7 @@ function PreviewNode({ id, data }: NodeProps<PreviewNodeType>) {
         onResizeEnd={(_e, r) => updateNode(id, { position: { x: snap(r.x), y: snap(r.y) }, width: snap(r.width), height: snap(r.height) })}
       />
       {/* Anchors for the line to the session that opened this preview. */}
-      <Handle id="left" type="source" position={Position.Left} isConnectable={false} className="run-handle" />
-      <Handle id="right" type="source" position={Position.Right} isConnectable={false} className="run-handle" />
+      <SideHandles type="source" />
       <div className="card-header preview-drag">
         <div className="preview-nav nodrag">
           <button className="icon-button persistent" title="Back" disabled={!nav.back} onClick={() => viewRef.current?.goBack()}>

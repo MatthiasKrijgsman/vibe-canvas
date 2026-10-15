@@ -1,10 +1,11 @@
-import { Handle, NodeResizer, Position, useReactFlow, useStore, type Node, type NodeProps } from '@xyflow/react'
+import { NodeResizer, useReactFlow, useStore, type Node, type NodeProps } from '@xyflow/react'
 import { memo, useCallback, useEffect, useLayoutEffect, useRef, useState, type DragEvent } from 'react'
 import type { PromptData } from '../../../shared/types'
 import { pendingFocus, useCanvas } from '../canvasContext'
 import { GRID, snap } from '../grid'
 import { CheckIcon, CloseIcon, NoteIcon } from '../icons'
 import { hasImageFiles, imageUrl, importImages } from '../images'
+import SideHandles from '../SideHandles'
 
 export type PromptNodeType = Node<PromptData & Record<string, unknown>, 'prompt'>
 
@@ -15,6 +16,14 @@ function PromptNode({ id, data }: NodeProps<PromptNodeType>) {
   const cardRef = useRef<HTMLDivElement>(null)
   const [dropping, setDropping] = useState(false)
   const [autoHeight, setAutoHeight] = useState<number>()
+  // React Flow applies node updates a beat after the keystroke, so a textarea bound straight
+  // to data.text gets its value replaced after each edit, which moves the caret to the end
+  // and wipes the native undo history. Keep the text locally and only take outside changes
+  // while the prompt isn't being edited.
+  const [text, setText] = useState(data.text)
+  useEffect(() => {
+    if (document.activeElement !== inputRef.current) setText(data.text)
+  }, [data.text])
   const images = data.images ?? []
   const run = runs[id]
   // Only an explicit height (set by resizing) fixes the card's size; the height prop
@@ -83,7 +92,7 @@ function PromptNode({ id, data }: NodeProps<PromptNodeType>) {
     addImages(e.dataTransfer.files)
   }
 
-  const words = data.text.trim() ? data.text.trim().split(/\s+/).length : 0
+  const words = text.trim() ? text.trim().split(/\s+/).length : 0
   const summary = [
     images.length ? `${images.length} image${images.length > 1 ? 's' : ''}` : '',
     words ? `${words} word${words > 1 ? 's' : ''}` : ''
@@ -112,8 +121,7 @@ function PromptNode({ id, data }: NodeProps<PromptNodeType>) {
         onResizeEnd={(_e, r) => updateNode(id, { position: { x: snap(r.x), y: snap(r.y) }, width: snap(r.width), height: snap(r.height) })}
       />
       {/* Anchors for the connector drawn while this prompt runs in a terminal. */}
-      <Handle id="left" type="source" position={Position.Left} isConnectable={false} className="run-handle" />
-      <Handle id="right" type="source" position={Position.Right} isConnectable={false} className="run-handle" />
+      <SideHandles type="source" />
       <div className="card-header">
         <span className="card-label">
           <NoteIcon size={14} />
@@ -138,10 +146,13 @@ function PromptNode({ id, data }: NodeProps<PromptNodeType>) {
         ref={inputRef}
         className="prompt-input nodrag nowheel"
         placeholder="Write a prompt…"
-        value={data.text}
+        value={text}
         disabled={!!run}
         spellCheck={false}
-        onChange={(e) => updateNodeData(id, { text: e.target.value, completed: false })}
+        onChange={(e) => {
+          setText(e.target.value)
+          updateNodeData(id, { text: e.target.value, completed: false })
+        }}
         onPaste={(e) => {
           const files = [...e.clipboardData.files].filter((f) => f.type.startsWith('image/'))
           if (files.length) {

@@ -2,7 +2,7 @@ import { FitAddon } from '@xterm/addon-fit'
 import { WebLinksAddon } from '@xterm/addon-web-links'
 import { Terminal } from '@xterm/xterm'
 import '@xterm/xterm/css/xterm.css'
-import { Handle, NodeResizer, Position, useReactFlow, type Node, type NodeProps } from '@xyflow/react'
+import { NodeResizer, useReactFlow, type Node, type NodeProps } from '@xyflow/react'
 import { memo, useCallback, useEffect, useRef, useState, type CSSProperties } from 'react'
 import type { TerminalData, TerminalStatus } from '../../../shared/types'
 import { pendingFocus, useCanvas } from '../canvasContext'
@@ -12,6 +12,7 @@ import { hasImageFiles, importImages } from '../images'
 import { EFFORTS, modelName } from '../models'
 import { onTerminalData, onTerminalHook, setTerminalStatus, useTerminalStatus } from '../terminals'
 import { TERMINAL_FONT, terminalThemes, useColorScheme } from '../theme'
+import SideHandles from '../SideHandles'
 
 export type TerminalNodeType = Node<TerminalData & Record<string, unknown>, 'terminal'>
 
@@ -166,8 +167,7 @@ function TerminalNode({ id, data }: NodeProps<TerminalNodeType>) {
         onResizeEnd={(_e, r) => updateNode(id, { position: { x: snap(r.x), y: snap(r.y) }, width: snap(r.width), height: snap(r.height) })}
       />
       {/* Anchors for the connector drawn while a prompt runs in this terminal. */}
-      <Handle id="left" type="target" position={Position.Left} isConnectable={false} className="run-handle" />
-      <Handle id="right" type="target" position={Position.Right} isConnectable={false} className="run-handle" />
+      <SideHandles type="target" />
       <div className="card-header terminal-drag">
         <span className={`status-dot ${status}`} title={STATUS_LABEL[status]} />
         <span className="card-title">{data.title || 'Claude Code'}</span>
