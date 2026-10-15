@@ -64,10 +64,10 @@
 
 @media (prefers-color-scheme: dark) {
   :root {
-    --bg-000: 60 2.1% 18.4%;
-    --bg-100: 60 2.7% 14.5%;
-    --bg-200: 30 3.3% 11.8%;
-    --bg-300: 60 2.6% 7.6%;
+    --bg-000: 60 1.6% 12.4%;
+    --bg-100: 0 0% 8.2%;
+    --bg-200: 0 0% 6.7%;
+    --bg-300: 0 0% 4.7%;
     --bg-400: 0 0% 0%;
     --text-100: 48 33.3% 97.1%;
     --text-200: 50 9% 73.7%;
@@ -81,7 +81,7 @@
     --success-100: 97 59.1% 46.1%;
 
     --canvas-dot: hsl(var(--text-500) / 0.22);
-    --terminal-bg: #1f1e1d;
+    --terminal-bg: #20201f;
     --shadow-card: 0 1px 2px hsl(0 0% 0% / 0.2), 0 4px 16px hsl(0 0% 0% / 0.25);
     --shadow-lifted: 0 2px 4px hsl(0 0% 0% / 0.3), 0 16px 40px hsl(0 0% 0% / 0.45);
     --shadow-card-rest: 0 0.5px 1px hsl(0 0% 0% / 0.16), 0 1px 3px hsl(0 0% 0% / 0.12);

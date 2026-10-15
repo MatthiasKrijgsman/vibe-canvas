@@ -18,10 +18,10 @@ export const TERMINAL_FONT = '"anthropic-mono", "SF Mono", ui-monospace, Menlo, 
 // Built from the Claude desktop palette: warm neutrals with the clay accent as cursor.
 export const terminalThemes: Record<'dark' | 'light', ITheme> = {
   dark: {
-    background: '#1f1e1d',
+    background: '#20201f',
     foreground: '#faf9f5',
     cursor: '#d97757',
-    cursorAccent: '#1f1e1d',
+    cursorAccent: '#20201f',
     selectionBackground: '#d9775740',
     black: '#30302e',
     red: '#e06c5f',

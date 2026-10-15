@@ -123,7 +123,7 @@ function createWindow(): void {
     minHeight: 480,
     titleBarStyle: 'hiddenInset',
     trafficLightPosition: { x: 16, y: 18 },
-    backgroundColor: nativeTheme.shouldUseDarkColors ? '#262624' : '#faf9f5',
+    backgroundColor: nativeTheme.shouldUseDarkColors ? '#151515' : '#faf9f5',
     show: false,
     webPreferences: {
       preload: join(__dirname, '../preload/index.js'),
