@@ -130,3 +130,18 @@ export const RemoteIcon = (p: IconProps) => (
     <path d="M7 11.75h2" />
   </Icon>
 )
+
+/** A page of text, for markdown document cards. */
+export const DocumentIcon = (p: IconProps) => (
+  <Icon {...p}>
+    <path d="M4 2.5h5.5L12.5 5.5v8H4z" />
+    <path d="M9.5 2.5v3h3M6 8h2.5M6 10.5h4.5" />
+  </Icon>
+)
+
+/** Opens something outside the canvas. */
+export const ExternalIcon = (p: IconProps) => (
+  <Icon {...p}>
+    <path d="M9 3h4v4M13 3L7.5 8.5M11.5 9.5v3a1 1 0 0 1-1 1h-7a1 1 0 0 1-1-1v-7a1 1 0 0 1 1-1h3" />
+  </Icon>
+)

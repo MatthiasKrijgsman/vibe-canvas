@@ -44,8 +44,11 @@ function sessionExists(env: Record<string, string>, sessionId: string): boolean 
 /** Claude Code puts the worktrees it creates in <repo>/.claude/worktrees/<name>. */
 const isClaudeWorktree = (dir: string) => /[\\/]\.claude[\\/]worktrees[\\/][^\\/]+[\\/]?$/.test(dir)
 
+type HookListener = (terminalId: string, payload: Record<string, unknown>) => void
+
 export class PtyManager {
   private sessions = new Map<string, Session>()
+  private hookListeners = new Set<HookListener>()
 
   /** `browserShim` becomes $BROWSER, so local URLs a session opens show up as previews. */
   constructor(
@@ -74,6 +77,7 @@ export class PtyManager {
         notificationType: payload.notification_type
       }
       this.send('pty:hook', event)
+      this.hookListeners.forEach((listen) => listen(id, payload))
       if (event.event === 'SessionStart') {
         // A --worktree session moves into its worktree; previews it starts should run there.
         const session = this.sessions.get(id)
@@ -85,13 +89,21 @@ export class PtyManager {
     }
   }
 
+  /** Every hook a session posts, with Claude Code's full payload (tool name, input…). */
+  onHookPayload(listener: HookListener): () => void {
+    this.hookListeners.add(listener)
+    return () => this.hookListeners.delete(listener)
+  }
+
   private hookSettings(): string {
     const command =
       `curl -s -m 2 -o /dev/null -X POST -H 'Content-Type: application/json' --data-binary @- ` +
       `"http://127.0.0.1:$VIBECANVAS_PORT/hook/$VIBECANVAS_TERMINAL?t=$VIBECANVAS_TOKEN" || true`
-    const hooks = Object.fromEntries(
+    const hooks: Record<string, { matcher?: string; hooks: { type: string; command: string }[] }[]> = Object.fromEntries(
       HOOK_EVENTS.map((name) => [name, [{ hooks: [{ type: 'command', command }] }]])
     )
+    // Claude asking to leave plan mode: its plan can open on the canvas while the user decides.
+    hooks.PreToolUse = [{ matcher: 'ExitPlanMode', hooks: [{ type: 'command', command }] }]
     return JSON.stringify({ hooks })
   }
 

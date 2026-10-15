@@ -2,7 +2,7 @@ import { contextBridge, ipcRenderer, type IpcRendererEvent } from 'electron'
 import { readFileSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { join } from 'node:path'
-import type { CanvasApi, HookEvent, PreviewOpenRequest, ServerStatus } from '../shared/types'
+import type { CanvasApi, DocumentContent, DocumentOpenRequest, HookEvent, PreviewOpenRequest, ServerStatus } from '../shared/types'
 
 function subscribe<A extends unknown[]>(channel: string, cb: (...args: A) => void): () => void {
   const listener = (_e: IpcRendererEvent, ...args: unknown[]) => cb(...(args as A))
@@ -57,6 +57,14 @@ const api: CanvasApi = {
     onServer: (cb) => subscribe<[string, ServerStatus | null]>('preview:server', cb),
     onFocus: (cb) => subscribe<[string]>('preview:focus', cb),
     onRestoreFocus: (cb) => subscribe<[]>('preview:restoreFocus', cb)
+  },
+  document: {
+    watch: (id, data) => ipcRenderer.invoke('document:watch', id, data),
+    unwatch: (id) => ipcRenderer.send('document:unwatch', id),
+    openLink: (from, href) => ipcRenderer.invoke('document:openLink', from, href),
+    openInApp: (path) => ipcRenderer.send('document:openInApp', path),
+    onOpen: (cb) => subscribe<[DocumentOpenRequest]>('document:open', cb),
+    onContent: (cb) => subscribe<[string, DocumentContent]>('document:content', cb)
   }
 }
 

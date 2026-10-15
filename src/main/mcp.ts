@@ -1,8 +1,9 @@
 import type { ServerResponse } from 'node:http'
+import { DocumentManager } from './documents'
 import { PRESETS, ToolError, type PreviewManager } from './preview'
 
 // A minimal MCP server (Streamable HTTP, JSON responses only) that gives each Claude Code
-// session tools for the preview cards on the canvas. Sessions reach it at /mcp/<terminal id>.
+// session tools for the preview and document cards on the canvas. Sessions reach it at /mcp/<terminal id>.
 
 type Content = { type: 'text'; text: string } | { type: 'image'; data: string; mimeType: string }
 interface ToolResult {
@@ -12,11 +13,16 @@ interface ToolResult {
 
 type Args = Record<string, unknown>
 
+export interface Managers {
+  previews: PreviewManager
+  documents: DocumentManager
+}
+
 interface Tool {
   name: string
   description: string
   inputSchema: Record<string, unknown>
-  run: (previews: PreviewManager, terminalId: string, args: Args) => Promise<ToolResult | string> | ToolResult | string
+  run: (managers: Managers, terminalId: string, args: Args) => Promise<ToolResult | string> | ToolResult | string
 }
 
 const SERVER_NAME = 'vibecanvas'
@@ -24,7 +30,8 @@ const SERVER_NAME = 'vibecanvas'
 const INSTRUCTIONS = `VibeCanvas shows web pages to the user as preview cards on their canvas, connected to this session by a line.
 To check a web UI you are building, start the project's dev server with preview_start (prefer this over running the dev server through Bash: the user sees the page, and its output stays available through preview_logs), or show a URL or local HTML file with preview_open.
 Then verify changes the way the user will see them: preview_screenshot to look at the page, preview_snapshot to read its structure and get element refs, preview_click / preview_fill / preview_press_key to interact, preview_console_logs and preview_network to find errors.
-The tools act on this session's most recently used preview unless you pass previewId.`
+The tools act on this session's most recently used preview unless you pass previewId.
+To show the user a markdown document (a plan, a report, notes, docs you wrote), use markdown_open: it renders the file in a card next to this session and updates as the file changes.`
 
 const previewId = { type: 'string', description: "Which preview to act on (see preview_list). Defaults to this session's most recently used one." }
 const target = {
@@ -58,7 +65,7 @@ const TOOLS: Tool[] = [
       port: { type: 'number', description: 'Port the server listens on, if its output has no URL.' },
       cwd: { type: 'string', description: 'Directory to run in, relative to the project. Defaults to the project root.' }
     }),
-    run: (m, t, a) => m.start(t, { command: str(a.command), name: str(a.name), port: num(a.port), cwd: str(a.cwd) })
+    run: ({ previews: m }, t, a) => m.start(t, { command: str(a.command), name: str(a.name), port: num(a.port), cwd: str(a.cwd) })
   },
   {
     name: 'preview_open',
@@ -73,19 +80,41 @@ const TOOLS: Tool[] = [
       },
       ['url']
     ),
-    run: (m, t, a) => m.open(t, { url: String(a.url ?? ''), previewId: str(a.previewId), newCard: bool(a.newCard) })
+    run: ({ previews: m, documents }, t, a) => {
+      const url = String(a.url ?? '')
+      // A markdown file reads better rendered in a document card than as raw text in a page.
+      const markdown = DocumentManager.markdownPath(url)
+      if (markdown) return documents.open(t, { path: markdown, newCard: bool(a.newCard) })
+      return m.open(t, { url, previewId: str(a.previewId), newCard: bool(a.newCard) })
+    }
+  },
+  {
+    name: 'markdown_open',
+    description:
+      'Show a markdown file to the user, rendered (headings, lists, tables, code), in a card on the canvas next to this session. ' +
+      'Use it for documents the user should read: a plan, a design or review write-up, release notes, a README you changed. ' +
+      'The card follows the file, so later edits show up by themselves; there is no need to call this again after editing. ' +
+      'A file that is already open is not opened twice unless newCard is set.',
+    inputSchema: schema(
+      {
+        path: { type: 'string', description: 'The markdown file: absolute, or relative to the project directory.' },
+        newCard: { type: 'boolean', description: 'Open another card even if the file is already shown.' }
+      },
+      ['path']
+    ),
+    run: ({ documents }, t, a) => documents.open(t, { path: String(a.path ?? ''), newCard: bool(a.newCard) })
   },
   {
     name: 'preview_list',
     description: 'List the preview cards on the canvas with their ids, pages and dev servers.',
     inputSchema: schema({}),
-    run: (m, t) => m.list(t)
+    run: ({ previews: m }, t) => m.list(t)
   },
   {
     name: 'preview_screenshot',
     description: 'Take a screenshot of what the preview shows (its visible viewport). Image pixels match CSS pixels for preview_click x/y.',
     inputSchema: schema({ previewId }),
-    run: async (m, t, a) => {
+    run: async ({ previews: m }, t, a) => {
       const shot = await m.screenshot(t, { previewId: str(a.previewId) })
       return { content: [{ type: 'image', data: shot.png, mimeType: 'image/png' }, { type: 'text', text: shot.text }] }
     }
@@ -96,7 +125,7 @@ const TOOLS: Tool[] = [
       'Read the page as an outline of its visible content: headings, text, links, buttons and form fields, with refs (like e12) to pass to preview_click and preview_fill. ' +
       'Cheaper and more precise than a screenshot for checking content.',
     inputSchema: schema({ previewId }),
-    run: (m, t, a) => m.snapshot(t, { previewId: str(a.previewId) })
+    run: ({ previews: m }, t, a) => m.snapshot(t, { previewId: str(a.previewId) })
   },
   {
     name: 'preview_click',
@@ -109,7 +138,7 @@ const TOOLS: Tool[] = [
       doubleClick: { type: 'boolean' },
       previewId
     }),
-    run: (m, t, a) =>
+    run: ({ previews: m }, t, a) =>
       m.click(t, {
         ...targetOf(a),
         x: num(a.x),
@@ -124,7 +153,7 @@ const TOOLS: Tool[] = [
       'Replace the value of a text field, textarea or contenteditable element by typing into it, or choose an option of a <select> (by value or label). ' +
       'Set submit to press Enter afterwards.',
     inputSchema: schema({ ...target, value: { type: 'string' }, submit: { type: 'boolean' }, previewId }, ['value']),
-    run: (m, t, a) => m.fill(t, { ...targetOf(a), value: String(a.value ?? ''), submit: bool(a.submit) })
+    run: ({ previews: m }, t, a) => m.fill(t, { ...targetOf(a), value: String(a.value ?? ''), submit: bool(a.submit) })
   },
   {
     name: 'preview_press_key',
@@ -132,14 +161,14 @@ const TOOLS: Tool[] = [
       'Press a key in the page, optionally focusing an element first. Keys: a character, Enter, Tab, Escape, Backspace, Delete, Space, arrows, Home, End, PageUp, PageDown, ' +
       'with modifiers like "Shift+Tab" or "Meta+a".',
     inputSchema: schema({ key: { type: 'string' }, ...target, previewId }, ['key']),
-    run: (m, t, a) => m.press(t, { ...targetOf(a), key: String(a.key ?? '') })
+    run: ({ previews: m }, t, a) => m.press(t, { ...targetOf(a), key: String(a.key ?? '') })
   },
   {
     name: 'preview_eval',
     description:
       'Run JavaScript in the page and return the result as JSON. Takes an expression ("document.title") or statements with a return; await works.',
     inputSchema: schema({ expression: { type: 'string' }, previewId }, ['expression']),
-    run: async (m, t, a) => {
+    run: async ({ previews: m }, t, a) => {
       const result = await m.evaluate(t, { expression: String(a.expression ?? ''), previewId: str(a.previewId) })
       return { content: [{ type: 'text', text: result.text }], isError: !result.ok }
     }
@@ -153,7 +182,7 @@ const TOOLS: Tool[] = [
       clear: { type: 'boolean', description: 'Clear the messages after reading them.' },
       previewId
     }),
-    run: (m, t, a) =>
+    run: ({ previews: m }, t, a) =>
       m.consoleLogs(t, { level: str(a.level), limit: num(a.limit), clear: bool(a.clear), previewId: str(a.previewId) })
   },
   {
@@ -165,20 +194,20 @@ const TOOLS: Tool[] = [
       limit: { type: 'number', description: 'Most recent requests to return (default 50).' },
       previewId
     }),
-    run: (m, t, a) =>
+    run: ({ previews: m }, t, a) =>
       m.network(t, { filter: str(a.filter), failedOnly: bool(a.failedOnly), limit: num(a.limit), previewId: str(a.previewId) })
   },
   {
     name: 'preview_logs',
     description: 'Read the output of the dev server started with preview_start (build errors, server logs).',
     inputSchema: schema({ lines: { type: 'number', description: 'Last lines to return (default 80).' }, previewId }),
-    run: (m, t, a) => m.logs(t, { lines: num(a.lines), previewId: str(a.previewId) })
+    run: ({ previews: m }, t, a) => m.logs(t, { lines: num(a.lines), previewId: str(a.previewId) })
   },
   {
     name: 'preview_reload',
     description: 'Reload the page.',
     inputSchema: schema({ ignoreCache: { type: 'boolean' }, previewId }),
-    run: (m, t, a) => m.reload(t, { ignoreCache: bool(a.ignoreCache), previewId: str(a.previewId) })
+    run: ({ previews: m }, t, a) => m.reload(t, { ignoreCache: bool(a.ignoreCache), previewId: str(a.previewId) })
   },
   {
     name: 'preview_resize',
@@ -191,13 +220,13 @@ const TOOLS: Tool[] = [
       preset: { type: 'string', enum: Object.keys(PRESETS) },
       previewId
     }),
-    run: (m, t, a) => m.resize(t, { width: num(a.width), height: num(a.height), preset: str(a.preset), previewId: str(a.previewId) })
+    run: ({ previews: m }, t, a) => m.resize(t, { width: num(a.width), height: num(a.height), preset: str(a.preset), previewId: str(a.previewId) })
   },
   {
     name: 'preview_stop',
     description: "Stop the preview's dev server. The card stays on the canvas.",
     inputSchema: schema({ previewId }),
-    run: (m, t, a) => m.stop(t, { previewId: str(a.previewId) })
+    run: ({ previews: m }, t, a) => m.stop(t, { previewId: str(a.previewId) })
   }
 ]
 
@@ -211,11 +240,11 @@ interface RpcRequest {
   params?: Record<string, unknown>
 }
 
-async function callTool(previews: PreviewManager, terminalId: string, params: Record<string, unknown>): Promise<ToolResult> {
+async function callTool(managers: Managers, terminalId: string, params: Record<string, unknown>): Promise<ToolResult> {
   const tool = TOOLS.find((t) => t.name === params.name)
   if (!tool) return { content: [{ type: 'text', text: `Unknown tool ${String(params.name)}` }], isError: true }
   try {
-    const result = await tool.run(previews, terminalId, (params.arguments as Args) ?? {})
+    const result = await tool.run(managers, terminalId, (params.arguments as Args) ?? {})
     return typeof result === 'string' ? { content: [{ type: 'text', text: result }] } : result
   } catch (err) {
     const text = err instanceof ToolError ? err.message : `${tool.name} failed: ${err instanceof Error ? err.message : String(err)}`
@@ -223,13 +252,13 @@ async function callTool(previews: PreviewManager, terminalId: string, params: Re
   }
 }
 
-async function dispatch(previews: PreviewManager, terminalId: string, req: RpcRequest): Promise<unknown> {
+async function dispatch(managers: Managers, terminalId: string, req: RpcRequest): Promise<unknown> {
   switch (req.method) {
     case 'initialize':
       return {
         protocolVersion: typeof req.params?.protocolVersion === 'string' ? req.params.protocolVersion : '2025-06-18',
         capabilities: { tools: {} },
-        serverInfo: { name: SERVER_NAME, title: 'VibeCanvas previews', version: '1.0.0' },
+        serverInfo: { name: SERVER_NAME, title: 'VibeCanvas previews and documents', version: '1.0.0' },
         instructions: INSTRUCTIONS
       }
     case 'ping':
@@ -237,13 +266,13 @@ async function dispatch(previews: PreviewManager, terminalId: string, req: RpcRe
     case 'tools/list':
       return { tools: TOOLS.map(({ name, description, inputSchema }) => ({ name, description, inputSchema })) }
     case 'tools/call':
-      return callTool(previews, terminalId, req.params ?? {})
+      return callTool(managers, terminalId, req.params ?? {})
     default:
       throw Object.assign(new Error(`Method not found: ${req.method}`), { code: -32601 })
   }
 }
 
-export async function handleMcp(previews: PreviewManager, terminalId: string, body: string, res: ServerResponse): Promise<void> {
+export async function handleMcp(managers: Managers, terminalId: string, body: string, res: ServerResponse): Promise<void> {
   let message: RpcRequest | RpcRequest[]
   try {
     message = JSON.parse(body)
@@ -260,7 +289,7 @@ export async function handleMcp(previews: PreviewManager, terminalId: string, bo
         // Notifications (no id) get no response.
         if (req.id === undefined || req.id === null) return null
         try {
-          return { jsonrpc: '2.0', id: req.id, result: await dispatch(previews, terminalId, req) }
+          return { jsonrpc: '2.0', id: req.id, result: await dispatch(managers, terminalId, req) }
         } catch (err) {
           const code = (err as { code?: number }).code ?? -32603
           return { jsonrpc: '2.0', id: req.id, error: { code, message: err instanceof Error ? err.message : String(err) } }

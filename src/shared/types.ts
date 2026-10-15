@@ -58,13 +58,33 @@ export type PreviewData = {
   server?: PreviewServer
 }
 
+export type DocumentData = {
+  /** Absolute path of the markdown file the card shows. */
+  path: string
+  /** The terminal whose Claude Code session opened this document, drawn as a connecting line. */
+  terminalId?: string
+}
+
+/** A document card's file as it is now: its text, or why it can't be shown. */
+export interface DocumentContent {
+  text?: string
+  error?: string
+}
+
+/** Main asks the canvas to show a new document card. */
+export interface DocumentOpenRequest {
+  id: string
+  path: string
+  terminalId?: string
+}
+
 export interface SavedNode {
   id: string
-  type: 'prompt' | 'terminal' | 'preview'
+  type: 'prompt' | 'terminal' | 'preview' | 'document'
   position: { x: number; y: number }
   width?: number
   height?: number
-  data: PromptData | TerminalData | PreviewData
+  data: PromptData | TerminalData | PreviewData | DocumentData
 }
 
 export interface CanvasState {
@@ -161,5 +181,19 @@ export interface CanvasApi {
     /** A tool needs keyboard focus in a card for a key press, then gives it back. */
     onFocus(cb: (id: string) => void): () => void
     onRestoreFocus(cb: () => void): () => void
+  }
+  document: {
+    /** A card shows this file: read it, and get its changes through onContent. */
+    watch(id: string, data: DocumentData): Promise<DocumentContent>
+    unwatch(id: string): void
+    /**
+     * Follow a link in a card. Resolves to the path of a markdown file to show in the card;
+     * web links and other files open in their own app (and resolve to null).
+     */
+    openLink(from: string, href: string): Promise<string | null>
+    /** Open the file in the app the system uses for it. */
+    openInApp(path: string): void
+    onOpen(cb: (req: DocumentOpenRequest) => void): () => void
+    onContent(cb: (id: string, content: DocumentContent) => void): () => void
   }
 }

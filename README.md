@@ -53,6 +53,11 @@ The packaged app and `npm run dev` share the same canvas data, so run one at a t
   land in its preview. The **Preview** toolbar button opens an empty card you can type a
   URL into. Closing a card stops its dev server; after a restart, a card whose server
   isn't running offers to start it again.
+- **Documents**: when Claude writes a plan in plan mode, the plan opens rendered in a card
+  next to its terminal, so you can read it while deciding whether to approve it. Claude can
+  also show any markdown file that way (`markdown_open`, or `preview_open` with a `.md` path).
+  Cards follow their file, so edits by Claude or by you show up right away. Links to other
+  markdown files open in the same card; web links open in your browser.
 - **Layout**: cards snap to the dot grid; resize any card from its edges or corners.
 - **Camera**: drag with the middle mouse button, or use `WASD` while nothing is selected, to
   pan; scroll or pinch to zoom (40%–100%). Left-dragging empty canvas draws a selection box.
@@ -74,6 +79,10 @@ The packaged app and `npm run dev` share the same canvas data, so run one at a t
   DevTools Protocol for input and screenshots, `webRequest` for network, process groups
   for dev servers). Pages run sandboxed in their own persistent session. Dev servers are
   read from the command, or from `.claude/launch.json` configurations.
+- `src/main/documents.ts` watches the files behind document cards (the folder, so saves that
+  replace the file are caught too). Plans are spotted from the hooks: a `Write`/`Edit` of a
+  markdown file in plan mode or in `~/.claude/plans`, and `ExitPlanMode` (a `PreToolUse` hook),
+  which carries the plan's path. Markdown is rendered with react-markdown and GFM, without raw HTML.
 - `$BROWSER` in sessions is `resources/browser-shim.js`, which sends local URLs to the
   canvas and everything else to your default browser.
 - `src/main/env.ts` builds the terminal environment from your login shell.

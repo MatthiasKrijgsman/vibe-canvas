@@ -25,12 +25,13 @@ import {
   type DragEvent as ReactDragEvent,
   type MouseEvent as ReactMouseEvent
 } from 'react'
-import type { CanvasState, PreviewOpenRequest, Project, SavedNode, TerminalData } from '../../shared/types'
+import type { CanvasState, DocumentOpenRequest, PreviewOpenRequest, Project, SavedNode, TerminalData } from '../../shared/types'
 import { CanvasContext, pendingFocus, PROJECT_DRAG_TYPE, type DropTarget, type PromptRun } from './canvasContext'
 import { FitIcon, GlobeIcon, MinusIcon, NoteIcon, PlusIcon, SparkIcon } from './icons'
 import { GRID, snap, snapPoint } from './grid'
 import { hasImageFiles, importImages } from './images'
 import LinkEdge from './LinkEdge'
+import DocumentNode, { type DocumentNodeType } from './nodes/DocumentNode'
 import PreviewNode, { type PreviewNodeType } from './nodes/PreviewNode'
 import PromptNode, { type PromptNodeType } from './nodes/PromptNode'
 import PromptDragOverlay from './PromptDragOverlay'
@@ -40,9 +41,9 @@ import Sidebar from './Sidebar'
 import StartDialog, { type SessionOptions } from './StartDialog'
 import { getTerminalStatus, onAnyTerminalHook, onTerminalStatusChange, sendPrompt } from './terminals'
 
-export type AppNode = PromptNodeType | TerminalNodeType | PreviewNodeType
+export type AppNode = PromptNodeType | TerminalNodeType | PreviewNodeType | DocumentNodeType
 
-const nodeTypes = { prompt: PromptNode, terminal: TerminalNode, preview: PreviewNode }
+const nodeTypes = { prompt: PromptNode, terminal: TerminalNode, preview: PreviewNode, document: DocumentNode }
 const edgeTypes = { run: RunEdge, link: LinkEdge }
 
 const DOT_SIZE = 1.4
@@ -59,6 +60,7 @@ const clampZoom = (zoom: number) => Math.min(MAX_ZOOM, Math.max(MIN_ZOOM, zoom))
 const PROMPT_WIDTH = 14 * GRID
 const TERMINAL_SIZE = { width: 32 * GRID, height: 20 * GRID }
 const PREVIEW_SIZE = { width: 40 * GRID, height: 28 * GRID }
+const DOCUMENT_SIZE = { width: 30 * GRID, height: 32 * GRID }
 
 function restoreNode(saved: SavedNode): AppNode {
   if (saved.type === 'terminal') {
@@ -83,6 +85,17 @@ function restoreNode(saved: SavedNode): AppNode {
       data: saved.data as PreviewNodeType['data']
     }
   }
+  if (saved.type === 'document') {
+    return {
+      id: saved.id,
+      type: 'document',
+      position: snapPoint(saved.position),
+      width: saved.width ?? DOCUMENT_SIZE.width,
+      height: saved.height ?? DOCUMENT_SIZE.height,
+      dragHandle: '.document-drag',
+      data: saved.data as DocumentNodeType['data']
+    }
+  }
   return {
     id: saved.id,
     type: 'prompt',
@@ -95,7 +108,7 @@ function restoreNode(saved: SavedNode): AppNode {
 
 function saveNode(node: AppNode): SavedNode {
   const width = node.width ?? node.measured?.width
-  if (node.type === 'terminal' || node.type === 'preview') {
+  if (node.type === 'terminal' || node.type === 'preview' || node.type === 'document') {
     return {
       id: node.id,
       type: node.type,
@@ -450,6 +463,32 @@ function Workspace({ initial }: { initial: CanvasState | null }) {
   // Claude (or a dev server it started) opened a preview from a session.
   useEffect(() => window.canvas.preview.onOpen((request) => createPreview(request)), [createPreview])
 
+  // Claude opened a markdown file, or wrote a plan, in a session: show it next to the terminal.
+  useEffect(
+    () =>
+      window.canvas.document.onOpen((request: DocumentOpenRequest) =>
+        setNodes((ns) => {
+          const terminal = request.terminalId ? ns.find((n) => n.id === request.terminalId) : undefined
+          const start = terminal
+            ? { x: terminal.position.x + nodeRect(terminal).width + 2 * GRID, y: terminal.position.y }
+            : (() => {
+                const c = viewportCenter()
+                return { x: c.x - DOCUMENT_SIZE.width / 2, y: c.y - DOCUMENT_SIZE.height / 2 }
+              })()
+          const node: DocumentNodeType = {
+            id: request.id,
+            type: 'document',
+            position: findFreeSpot(ns, start, DOCUMENT_SIZE),
+            ...DOCUMENT_SIZE,
+            dragHandle: '.document-drag',
+            data: { path: request.path, terminalId: request.terminalId }
+          }
+          return [...ns, node]
+        })
+      ),
+    [setNodes, viewportCenter]
+  )
+
   const newPreviewAtCenter = useCallback(() => {
     const id = `preview-${crypto.randomUUID()}`
     pendingFocus.add(id)
@@ -565,9 +604,9 @@ function Workspace({ initial }: { initial: CanvasState | null }) {
           }
         ]
       }),
-      // Each preview is linked to the session that opened it.
+      // Each preview and document is linked to the session that opened it.
       ...nodes.flatMap((preview): Edge[] => {
-        if (preview.type !== 'preview' || !preview.data.terminalId) return []
+        if ((preview.type !== 'preview' && preview.type !== 'document') || !preview.data.terminalId) return []
         const terminal = nodes.find((n) => n.id === preview.data.terminalId)
         if (!terminal) return []
         const p = nodeRect(preview)

@@ -4,8 +4,9 @@ import { cpSync, existsSync, mkdirSync, readdirSync, readFileSync, renameSync, w
 import { homedir } from 'node:os'
 import { basename, dirname, join } from 'node:path'
 import { pathToFileURL } from 'node:url'
-import type { CanvasState, PreviewData, PtyStartOptions } from '../shared/types'
+import type { CanvasState, DocumentData, PreviewData, PtyStartOptions } from '../shared/types'
 import { normalizeUrl } from '../shared/url'
+import { DocumentManager } from './documents'
 import { handleMcp } from './mcp'
 import { PREVIEW_PARTITION, PreviewManager } from './preview'
 import { PtyManager } from './pty'
@@ -92,8 +93,12 @@ const send = (channel: string, ...args: unknown[]): boolean => {
 const server = new LocalServer()
 const ptys = new PtyManager(send, server, browserShim)
 const previews = new PreviewManager(send, (terminalId) => ptys.cwd(terminalId))
+const documents = new DocumentManager(send, (terminalId) => ptys.cwd(terminalId))
+ptys.onHookPayload((terminalId, payload) => {
+  if (payload.hook_event_name === 'PostToolUse' || payload.hook_event_name === 'PreToolUse') documents.onToolUse(terminalId, payload)
+})
 
-server.route('POST', /^\/mcp\/([\w-]+)$/, ({ match, body }, res) => handleMcp(previews, match[1], body, res))
+server.route('POST', /^\/mcp\/([\w-]+)$/, ({ match, body }, res) => handleMcp({ previews, documents }, match[1], body, res))
 // No server-initiated messages, so no event stream to open.
 server.route('GET', /^\/mcp\/([\w-]+)$/, (_req, res) => {
   res.writeHead(405, { Allow: 'POST' }).end()
@@ -203,6 +208,11 @@ ipcMain.on('preview:detach', (_e, id: string, webContentsId: number) => previews
 ipcMain.on('preview:close', (_e, id: string) => previews.close(id))
 ipcMain.handle('preview:startServer', (_e, id: string) => previews.startServerFor(id))
 ipcMain.on('preview:stopServer', (_e, id: string) => previews.stopServer(id))
+
+ipcMain.handle('document:watch', (_e, id: string, data: DocumentData) => documents.watch(id, data))
+ipcMain.on('document:unwatch', (_e, id: string) => documents.unwatch(id))
+ipcMain.handle('document:openLink', (_e, from: string, href: string) => documents.openLink(from, href))
+ipcMain.on('document:openInApp', (_e, path: string) => documents.openInApp(path))
 
 app.whenReady().then(async () => {
   migrateLegacyData()
